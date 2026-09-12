@@ -23,6 +23,12 @@ import {
 const MAX_TOOL_ITERATIONS = 5
 const MAX_TOKENS = 1024
 
+// "Silent" tools do background work and return nothing the user needs to hear.
+// If the model already wrote its user-facing message in the same turn as one of
+// these, there's no reason to prompt it again (it would just repeat itself).
+// offer_demo / escalate_lead are NOT silent — the model relays their result.
+const SILENT_TOOLS = new Set(['update_lead'])
+
 export interface AgentHistoryMessage {
   role: 'user' | 'assistant'
   content: string
@@ -151,13 +157,25 @@ export async function runAgentTurn(params: {
   const userText = [...history.filter((m) => m.role === 'user').map((m) => m.content), userMessage].join('\n')
   const systemPrompt = buildSystemPrompt(conversationText)
 
+  // Anthropic requires the first message to be from the user. The persisted
+  // history starts with the assistant greeting, so drop any leading assistant
+  // turns — the greeting's context is carried in the system prompt instead.
+  const trimmedHistory = [...history]
+  while (trimmedHistory.length && trimmedHistory[0].role === 'assistant') {
+    trimmedHistory.shift()
+  }
+
   const messages: Anthropic.Messages.MessageParam[] = [
-    ...history.map((m) => ({ role: m.role, content: m.content })),
+    ...trimmedHistory.map((m) => ({ role: m.role, content: m.content })),
     { role: 'user' as const, content: userMessage },
   ]
 
   const state: ToolState = { toolsUsed: [], demoSurfaced: false, escalated: false }
-  let finalText = ''
+  // Accumulate every text block the model emits across the loop. The model
+  // often writes its user-facing message (e.g. the next question) in the SAME
+  // turn as a tool call, then adds little or nothing after the tool result —
+  // so we must keep the earlier text, not overwrite it with the tail.
+  const textParts: string[] = []
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
     const response = await createMessageWithRetry({
@@ -173,8 +191,9 @@ export async function runAgentTurn(params: {
     const textBlocks = response.content.filter(
       (b): b is Anthropic.Messages.TextBlock => b.type === 'text'
     )
-    if (textBlocks.length) {
-      finalText = textBlocks.map((b) => b.text).join('\n').trim()
+    const stepText = textBlocks.map((b) => b.text).join('\n').trim()
+    if (stepText) {
+      textParts.push(stepText)
     }
 
     if (response.stop_reason !== 'tool_use') {
@@ -212,6 +231,13 @@ export async function runAgentTurn(params: {
       })
     }
     messages.push({ role: 'user', content: toolResults })
+
+    // If the model already delivered its message this turn and only ran silent
+    // background tools, stop — asking it again just produces a redundant repeat.
+    const usedNonSilentTool = toolUses.some((t) => !SILENT_TOOLS.has(t.name))
+    if (stepText && !usedNonSilentTool) {
+      break
+    }
   }
 
   // Deterministic escalation backstop — catches signals the model may have missed.
@@ -223,6 +249,7 @@ export async function runAgentTurn(params: {
     }
   }
 
+  let finalText = textParts.join('\n\n').trim()
   if (!finalText) {
     finalText =
       "Thanks — let me flag that for the team and someone will follow up. In the meantime, is there anything else about your quoting workflow I can help with?"

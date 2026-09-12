@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { getSupabaseAdmin } from './admin'
+import { CONCIERGE_GREETING } from '@/lib/greeting'
 
 export type LeadSource = 'gtm-inbound' | 'gtm-outbound'
 export type Qualification = 'unqualified' | 'qualifying' | 'qualified' | 'not_icp'
@@ -66,6 +67,11 @@ export async function createConversation(input: {
     .from('gtm_leads')
     .insert({ conversation_id: data.id, source })
   if (leadError) throw new Error(`createLead failed: ${leadError.message}`)
+
+  // Persist the opening greeting as the first assistant turn, so the model has
+  // the context of what it already asked (otherwise it treats the user's first
+  // reply as context-free) and the admin transcript is complete.
+  await appendMessage({ conversationId: data.id as string, role: 'assistant', content: CONCIERGE_GREETING })
 
   return data.id as string
 }

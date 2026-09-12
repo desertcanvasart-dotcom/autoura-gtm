@@ -1,18 +1,16 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { CONCIERGE_GREETING } from '@/lib/greeting'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
 }
 
-const GREETING =
-  "Hi — I'm the Autoura concierge. I work with tour operators and DMCs to see if Autoura fits how you quote today. To start: what are you running quoting on right now — WhatsApp + Excel, another system, or nothing formal yet?"
-
 export default function ChatWidget() {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: GREETING },
+    { role: 'assistant', content: CONCIERGE_GREETING },
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)

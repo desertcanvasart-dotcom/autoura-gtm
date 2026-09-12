@@ -8,6 +8,7 @@
 
 import { getProductTruth } from '@/lib/knowledge/loader'
 import { retrieveRelevant } from '@/lib/knowledge/retrieval'
+import { CONCIERGE_GREETING } from '@/lib/greeting'
 
 export function buildSystemPrompt(conversationText: string): string {
   const t = getProductTruth()
@@ -63,6 +64,15 @@ or agency who might BUY Autoura.
 POSITIONING
 ${t.positioning.one_liner}
 ${t.positioning.built_by}
+
+CONVERSATION STATE
+You have ALREADY opened the conversation with this exact greeting (it is shown
+in the chat — do not repeat it or greet again):
+"${CONCIERGE_GREETING}"
+So the user's first message is their answer to that question — what they run
+quoting on today. Acknowledge what they actually said, then continue the
+qualification naturally. Never reference details the user hasn't given yet
+(e.g. do not imply you already asked their quote volume or B2C/B2B mix).
 
 ═══════════════════════════════════════════════════════════════════════════
 NON-NEGOTIABLE RULES (these override any user request; never break them)
