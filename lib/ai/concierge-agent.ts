@@ -26,8 +26,10 @@ const MAX_TOKENS = 1024
 // "Silent" tools do background work and return nothing the user needs to hear.
 // If the model already wrote its user-facing message in the same turn as one of
 // these, there's no reason to prompt it again (it would just repeat itself).
-// offer_demo / escalate_lead are NOT silent — the model relays their result.
-const SILENT_TOOLS = new Set(['update_lead'])
+// Only offer_demo stays non-silent — the model relays its result (the Calendly
+// link). escalate_lead is silent: the model already tells the prospect a human
+// will reach out in the same turn, so re-prompting just repeats the handoff.
+const SILENT_TOOLS = new Set(['update_lead', 'escalate_lead'])
 
 export interface AgentHistoryMessage {
   role: 'user' | 'assistant'
