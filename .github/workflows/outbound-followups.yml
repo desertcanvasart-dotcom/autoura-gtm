@@ -1,0 +1,20 @@
+name: Outbound follow-ups
+
+# Drafts due Touch 2/3 into the human-approval queue once a day. It never sends
+# — a person still approves every email in /admin/outbound.
+on:
+  schedule:
+    - cron: '0 8 * * *' # daily at 08:00 UTC
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+jobs:
+  draft-followups:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit the sequencer endpoint
+        run: |
+          echo "Requesting due follow-up drafts…"
+          curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://autoura-growth-production.up.railway.app/api/cron/outbound-followups"
+          echo ""
