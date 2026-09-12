@@ -151,7 +151,7 @@ function Dot({ delay = '0ms' }: { delay?: string }) {
 
 // Render Calendly / http links as clickable anchors; everything else as text.
 function linkify(text: string): React.ReactNode {
-  const parts = text.split(/(https?:\/\/[^\s]+)/g)
+  const parts = text.split(/(https?:\/\/[^\s*]+)/g)
   return parts.map((part, i) =>
     /^https?:\/\//.test(part) ? (
       <a
