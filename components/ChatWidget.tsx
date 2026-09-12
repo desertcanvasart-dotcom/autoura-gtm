@@ -74,9 +74,9 @@ export default function ChatWidget() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-warm-200 bg-white shadow-xl">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-slate-100 bg-brand px-4 py-3 text-white">
+      <div className="flex items-center gap-3 border-b border-black/5 bg-brand px-4 py-3 text-white">
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-sm font-semibold">
           A
         </div>
@@ -87,14 +87,14 @@ export default function ChatWidget() {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-slate-50 px-4 py-4">
+      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-warm-50 px-4 py-4">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                 m.role === 'user'
                   ? 'rounded-br-sm bg-brand text-white'
-                  : 'rounded-bl-sm border border-slate-200 bg-white text-slate-800'
+                  : 'rounded-bl-sm border border-warm-200 bg-white text-warm-800'
               }`}
             >
               {linkify(m.content)}
@@ -103,7 +103,7 @@ export default function ChatWidget() {
         ))}
         {loading && (
           <div className="flex justify-start">
-            <div className="rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-400">
+            <div className="rounded-2xl rounded-bl-sm border border-warm-200 bg-white px-3.5 py-2.5 text-sm text-warm-400">
               <span className="inline-flex gap-1">
                 <Dot /> <Dot delay="150ms" /> <Dot delay="300ms" />
               </span>
@@ -113,7 +113,7 @@ export default function ChatWidget() {
       </div>
 
       {/* Composer */}
-      <div className="border-t border-slate-100 bg-white p-3">
+      <div className="border-t border-warm-200 bg-white p-3">
         {error && <div className="mb-2 text-xs text-red-500">{error}</div>}
         <div className="flex items-end gap-2">
           <textarea
@@ -122,7 +122,7 @@ export default function ChatWidget() {
             onKeyDown={onKeyDown}
             rows={1}
             placeholder="Type your message…"
-            className="max-h-28 flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+            className="max-h-28 flex-1 resize-none rounded-xl border border-warm-300 px-3 py-2 text-sm text-warm-800 placeholder:text-warm-400 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
           />
           <button
             onClick={send}
@@ -132,7 +132,7 @@ export default function ChatWidget() {
             Send
           </button>
         </div>
-        <div className="mt-2 text-center text-[10px] text-slate-400">
+        <div className="mt-2 text-center text-[10px] text-warm-500">
           Answers reflect Autoura&apos;s current product. Anything unconfirmed is flagged for the team.
         </div>
       </div>
@@ -143,7 +143,7 @@ export default function ChatWidget() {
 function Dot({ delay = '0ms' }: { delay?: string }) {
   return (
     <span
-      className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"
+      className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-warm-400"
       style={{ animationDelay: delay }}
     />
   )
