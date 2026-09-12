@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+/* The widget iframe body must be transparent so the embedding site shows through
+   around the chat panel's rounded corners. */
+body.widget-embed {
+  background: transparent;
+}

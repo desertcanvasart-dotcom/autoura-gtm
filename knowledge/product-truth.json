@@ -1,0 +1,248 @@
+{
+  "_readme": "PRODUCT TRUTH FILE — the single source of every claim the GTM agent is allowed to make. Hand-edit this file whenever a public claim on the marketing site changes. The agent may ONLY state things grounded here; anything else it must defer with 'let me flag that for the team'. This is the file that stops claims drift (spec §3, §8). After editing, no code change or redeploy of logic is needed — the agent reads this at request time.",
+  "_last_reviewed": "2026-09-12",
+  "_confidence_legend": {
+    "shipped": "Shipped & stable — safe to state plainly.",
+    "beta": "Beta / caveat REQUIRED — always state the exact caveat verbatim.",
+    "do_not_claim": "Never claim. If asked, defer to a human."
+  },
+
+  "positioning": {
+    "one_liner": "Autoura is a quoting and operations platform built by tour operators, for tour operators and DMCs — it reads messy WhatsApp/email requests and turns them into priced, versioned itineraries with real per-trip P&L.",
+    "built_by": "Built by Islam Hussein after 30+ years running ground tour operations in Egypt — not a generic global booking engine retrofitted for DMCs.",
+    "core_pain_solved": [
+      "Copy-paste quoting across WhatsApp + Excel + email",
+      "Margin leaks from stale rates",
+      "No real-time per-trip P&L visibility",
+      "Manual re-quoting when group size or nationality changes"
+    ]
+  },
+
+  "features": {
+    "shipped": [
+      {
+        "id": "unified_inbox",
+        "name": "WhatsApp / Gmail unified inbox",
+        "confidence": "shipped",
+        "claim": "Incoming requests from WhatsApp and Gmail land in one unified inbox.",
+        "talk_track": "No more flipping between apps to find the thread you were quoting."
+      },
+      {
+        "id": "ai_itinerary_gen",
+        "name": "AI itinerary generation from unstructured text",
+        "confidence": "shipped",
+        "claim": "Autoura reads an unstructured request (e.g. a WhatsApp thread) and drafts a structured itinerary from it.",
+        "talk_track": "It reads the thread the way you would and gives you a first-draft itinerary to adjust, not a blank form."
+      },
+      {
+        "id": "rate_categories",
+        "name": "16 rate categories",
+        "confidence": "shipped",
+        "claim": "16 rate categories are supported for pricing.",
+        "talk_track": "Covers the real spread of what a DMC prices — not just 'adult/child'."
+      },
+      {
+        "id": "dual_passport",
+        "name": "Dual-passport (EU / non-EU) pricing",
+        "confidence": "shipped",
+        "claim": "Entrance fees and rates price differently by nationality/passport (e.g. EU vs non-EU), automatically.",
+        "talk_track": "Nationality-based entrance fees are handled for you instead of being a manual lookup every quote."
+      },
+      {
+        "id": "versioned_quotes",
+        "name": "Versioned quotes",
+        "confidence": "shipped",
+        "claim": "Quotes are versioned — you can re-price and keep the history of each version.",
+        "talk_track": "When the group size changes mid-conversation, you re-quote without losing the prior version."
+      },
+      {
+        "id": "per_trip_pnl",
+        "name": "Per-trip P&L",
+        "confidence": "shipped",
+        "claim": "Real per-trip profit & loss is visible on each trip.",
+        "talk_track": "You see margin on the trip, not just a selling price."
+      },
+      {
+        "id": "rbac",
+        "name": "Role-based access control (RBAC)",
+        "confidence": "shipped",
+        "claim": "Role-based access control governs who can see and do what.",
+        "talk_track": "Reservations, ops, and finance each get the access that fits their role."
+      },
+      {
+        "id": "audit_logging",
+        "name": "Audit logging",
+        "confidence": "shipped",
+        "claim": "Full audit logging records changes.",
+        "talk_track": "You can see who changed what and when."
+      },
+      {
+        "id": "multitenant_isolation",
+        "name": "Org-scoped multi-tenant isolation + row-level security",
+        "confidence": "shipped",
+        "claim": "Data is isolated per organization with row-level security.",
+        "talk_track": "Your data is scoped to your org; other tenants can't see it."
+      }
+    ],
+
+    "beta": [
+      {
+        "id": "quickbooks_sync",
+        "name": "QuickBooks sync",
+        "confidence": "beta",
+        "required_caveat": "in beta, push-only",
+        "claim": "QuickBooks sync is in beta and push-only.",
+        "must_say": "Always describe it as 'in beta, push-only' — NEVER say 'integrated' or imply two-way sync.",
+        "talk_track": "We can push to QuickBooks — it's in beta and push-only today, so it's one-directional."
+      },
+      {
+        "id": "xero_sync",
+        "name": "Xero sync",
+        "confidence": "beta",
+        "required_caveat": "in beta, push-only",
+        "claim": "Xero sync is in beta and push-only.",
+        "must_say": "Always describe it as 'in beta, push-only' — NEVER say 'integrated' or imply two-way sync.",
+        "talk_track": "Same for Xero — in beta, push-only for now."
+      }
+    ],
+
+    "do_not_claim": [
+      {
+        "id": "multilingual_docs",
+        "name": "Full multilingual document generation",
+        "confidence": "do_not_claim",
+        "claim_boundary": "Document generation is supported for EN/JP only. Do NOT claim full multilingual document output beyond EN/JP.",
+        "if_asked": "Be honest that document output covers EN/JP today; anything beyond that is not something to promise. Offer to flag the specific language need for the team."
+      },
+      {
+        "id": "api_module_counts",
+        "name": "API endpoint / module counts",
+        "confidence": "do_not_claim",
+        "claim_boundary": "Do NOT cite specific numbers of API endpoints or modules. These were overstated on the marketing site before and must not be repeated unless freshly verified.",
+        "if_asked": "Don't quote counts. Describe capabilities in plain terms and offer to connect them with the team for specifics."
+      }
+    ]
+  },
+
+  "pricing": {
+    "policy": "These four tiers are the ONLY prices the agent may quote. Never discount, never invent a price, never quote Enterprise as a fixed number — Enterprise is throughput-based and requires a human. Never quote outside these four.",
+    "currency": "USD",
+    "billing": "per month, throughput-based",
+    "tiers": [
+      { "name": "Solo", "price": 69, "display": "$69/mo", "positioning": "Low-commitment entry point for the smallest operators." },
+      { "name": "Studio", "price": 189, "display": "$189/mo", "positioning": "Growing operators." },
+      { "name": "Agency", "price": 449, "display": "$449/mo", "positioning": "Established agencies with steady quote volume." },
+      { "name": "Enterprise", "price": null, "display": "$1,200+/mo", "positioning": "High-volume / multi-country. Throughput-based. Requires a human — escalate, do not quote a fixed number or auto-book." }
+    ]
+  },
+
+  "objections": [
+    {
+      "objection": "We already have a system",
+      "response_direction": "Ask what it doesn't do — usually re-pricing on group-size change or nationality-based fees. Don't rip out their tool; show the gap.",
+      "do_not": "Don't badmouth their current tool."
+    },
+    {
+      "objection": "Too expensive",
+      "response_direction": "Anchor to time cost: 3–4 hrs/itinerary manually vs. minutes. Point to Solo tier ($69/mo) as the low-commitment entry point.",
+      "do_not": "Don't offer a discount or a custom price."
+    },
+    {
+      "objection": "We're not in Egypt",
+      "response_direction": "Be honest: Egypt is the complete template; other destinations are configurable but you load your own rates from a blank table. Don't imply parity that doesn't exist yet.",
+      "do_not": "Don't imply non-Egypt destinations work out of the box with rates pre-loaded."
+    },
+    {
+      "objection": "Is our data safe?",
+      "response_direction": "Org-scoped multi-tenant isolation, row-level security, full audit logging — these are real, cite them plainly.",
+      "do_not": ""
+    },
+    {
+      "objection": "Does it replace my team?",
+      "response_direction": "No — it removes the manual re-typing and reconciliation, not the relationship-selling or ground judgment. Position as leverage, not headcount replacement.",
+      "do_not": "Don't position it as a way to cut staff."
+    }
+  ],
+
+  "case_studies": [
+    {
+      "id": "travel2egypt",
+      "name": "Travel2Egypt (Islam Hussein)",
+      "claim": "Travel2Egypt reported going from 3–4 hours per itinerary to about 5 minutes.",
+      "caveat": "Not claimed as universal — share as one operator's result, not a guarantee."
+    },
+    {
+      "id": "ops_manager",
+      "name": "Operations manager (site testimonial)",
+      "claim": "An operations manager is one of the three testimonials featured on the site.",
+      "caveat": "Use only the substance shown on the site; don't embellish."
+    },
+    {
+      "id": "finance_director",
+      "name": "Finance director (site testimonial)",
+      "claim": "A finance director is one of the three testimonials featured on the site.",
+      "caveat": "Use only the substance shown on the site; don't embellish."
+    }
+  ],
+
+  "competitors": {
+    "guidance": "Know one differentiator against each named player. Never badmouth generically. Core differentiator across all: Egypt-specific abbreviation parsing and dual-passport rate logic built from 30+ years of ground-operator experience — not a generic global booking engine retrofitted for DMCs.",
+    "players": [
+      { "name": "Beekeeper", "differentiator": "Autoura is purpose-built for DMC quoting and per-trip P&L, not a general team-comms tool." },
+      { "name": "Fareportal", "differentiator": "Autoura is operator-side quoting/ops with nationality-based pricing, not a consumer OTA engine." },
+      { "name": "TravClan", "differentiator": "Autoura's dual-passport rate logic and WhatsApp-thread re-pricing come from ground-operator experience, not a generic global booking retrofit." }
+    ]
+  },
+
+  "qualification": {
+    "questions": [
+      "What are you running today — WhatsApp + Excel, another system, or nothing formal?",
+      "Roughly how many quotes do you send a week?",
+      "Are you mostly B2C, B2B (trade partners), or both?",
+      "Which destination(s) do you operate in?",
+      "What's the most annoying part of quoting right now?"
+    ],
+    "ask_style": "One question at a time, conversationally. Don't interrogate or dump a form.",
+    "egypt_pitch": "Egypt: 'we built this from your workflow' — the complete template.",
+    "non_egypt_pitch": "Anywhere else: 'destination-agnostic, you load your own rates' — be honest that non-Egypt destinations start from a blank rate table.",
+    "icp": {
+      "in": [
+        "Small-to-mid DMCs and inbound tour operators (2–30 staff) running quoting through WhatsApp + Excel + email",
+        "Regional operators expanding into a new destination (e.g. Jordan, Morocco) who need a rate/itinerary system",
+        "B2B-heavy agencies quoting partner agents at pax-band pricing in spreadsheets"
+      ],
+      "out": [
+        "Large enterprise OTAs",
+        "Consumer-facing marketplaces",
+        "Single-guide freelancers under ~5 bookings/month (too small to need the rate engine)"
+      ]
+    }
+  },
+
+  "escalation": {
+    "policy": "These leads are worth a human taking the call — flag to a human and do NOT auto-book or quote a fixed price.",
+    "triggers": [
+      "Enterprise-tier interest",
+      "High monthly quote volume (well above typical small/mid operator)",
+      "Multi-country / multi-destination rollout",
+      "Any request for custom development, a custom price, an SLA, or a launch-date commitment"
+    ],
+    "escalate_to": "Faris"
+  },
+
+  "booking": {
+    "calendly_url": "https://calendly.com/autoura",
+    "when_to_offer": "The moment a qualified, in-ICP lead shows real intent (asks about pricing, timeline, or says 'how do we start'), offer the demo link directly. Don't push it on clearly non-ICP leads."
+  },
+
+  "hard_rules": [
+    "Only make claims grounded in this file. If asked about something not here, say 'let me flag that for the team' — never guess.",
+    "Always caveat QuickBooks/Xero as 'in beta, push-only' — never 'integrated'.",
+    "Never quote a price outside the four published tiers. Never discount.",
+    "Never promise a launch date, custom feature, custom price, or SLA.",
+    "Never claim full multilingual document output beyond EN/JP.",
+    "Never cite API endpoint or module counts.",
+    "Escalate enterprise / high-volume / multi-country leads to a human instead of auto-booking.",
+    "Be honest when a workflow isn't handled well yet (e.g. a destination with no rate template) — explain what setup would look like."
+  ]
+}
