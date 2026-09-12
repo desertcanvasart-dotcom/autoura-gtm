@@ -1,0 +1,40 @@
+{
+  "_readme": "OUTBOUND PLAYBOOK — steers how the agent drafts cold outreach. Hand-edit as your outbound strategy evolves. Claims still come ONLY from product-truth.json; this file governs structure/tone, not what's true about the product.",
+  "_last_reviewed": "2026-09-12",
+
+  "touch1": {
+    "goal": "Open a conversation with a specific, provable observation about THIS prospect — not a pitch. Earn a reply, not a booking.",
+    "structure": [
+      "Reference the real signal about them (their public WhatsApp number, a slow-reply review, a job listing, their destination). Never a templated opener with only [Company] swapped in.",
+      "Ask one concrete question about their quoting workflow (e.g. when a group size changes mid-thread, is re-pricing automatic or a manual re-quote?).",
+      "One sentence of credibility: built by an Egypt operator after 30+ years, reads the WhatsApp thread and re-prices automatically.",
+      "A soft, low-pressure offer — a 5-minute look with their own kind of booking — NOT a hard Calendly link on the first touch."
+    ],
+    "length": "Short — 60–110 words. Plain text, like a real person typed it. No marketing gloss, no bullet lists, no images.",
+    "subject": "Lowercase, specific, non-salesy (e.g. 'your whatsapp quoting'). No emojis, no ALL CAPS, no 'Re:' tricks."
+  },
+
+  "voice": "Operator-to-operator. Warm, direct, concrete. Sounds like Islam wrote it, not a marketing team.",
+
+  "must_do": [
+    "Reference the prospect's specific signal — if no signal is provided, keep the observation honest and general to their destination rather than inventing specifics.",
+    "Only make claims grounded in product-truth.json. Caveat QuickBooks/Xero as 'in beta, push-only'. Never quote a price outside the four tiers.",
+    "Be honest about non-Egypt destinations (you load your own rates from a blank table)."
+  ],
+
+  "must_not": [
+    "Never invent facts about the prospect you weren't given.",
+    "Never make a claim not in product-truth.json.",
+    "Never put a hard Calendly link or a demo booking as the touch-1 call to action — that's for warm replies.",
+    "No pushy urgency, no fake scarcity, no 'just following up' guilt.",
+    "Never contact via WhatsApp cold — email/LinkedIn only (enforced by the system, but never draft copy that implies WhatsApp outreach)."
+  ],
+
+  "signals_to_reference": [
+    "Public WhatsApp Business number on their site/booking page",
+    "Manual PDF itineraries with inconsistent branding",
+    "TripAdvisor/Google reviews mentioning slow quotes or price changing after booking",
+    "A reservations/operations manager job listing",
+    "Expanding into a new destination (Jordan, Morocco)"
+  ]
+}

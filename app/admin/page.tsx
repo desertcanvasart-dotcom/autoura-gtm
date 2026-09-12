@@ -34,7 +34,12 @@ export default async function AdminPage() {
             Review transcripts for claims drift and see the lead each chat generated.
           </p>
         </div>
-        <div className="text-sm text-slate-500">{rows.length} conversation(s)</div>
+        <div className="flex items-center gap-4">
+          <Link href="/admin/outbound" className="text-sm font-medium text-brand hover:underline">
+            Outbound campaigns →
+          </Link>
+          <div className="text-sm text-slate-500">{rows.length} conversation(s)</div>
+        </div>
       </div>
 
       {loadError && (
