@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getCampaign, listProspects, listMessagesByProspect, type ProspectRow, type MessageRow } from '@/lib/outbound/db'
-import { importCsvAction, draftAction, approveSendAction, suppressAction } from '../actions'
+import { importCsvAction, draftAction, approveSendAction, suppressAction, markRepliedAction, stopSequenceAction } from '../actions'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -67,19 +67,38 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
         </form>
       </section>
 
+      <p className="mt-4 text-xs text-warm-500">
+        Sequence: up to {campaign.max_touches} touches, {campaign.touch_interval_days} days apart. Follow-ups
+        (Touch 2/3) are auto-drafted when due and wait here for your approval.
+      </p>
+
       {/* Prospects */}
-      <section className="mt-6 space-y-4">
+      <section className="mt-4 space-y-4">
         {prospects.map((p) => (
-          <ProspectCard key={p.id} p={p} m={latestByProspect.get(p.id) || null} />
+          <ProspectCard key={p.id} p={p} m={latestByProspect.get(p.id) || null} maxTouches={campaign.max_touches} />
         ))}
       </section>
     </main>
   )
 }
 
-function ProspectCard({ p, m }: { p: ProspectRow; m: MessageRow | null }) {
+function SeqPill({ value }: { value: string }) {
+  const color = {
+    active: 'bg-blue-50 text-blue-700',
+    completed: 'bg-warm-100 text-warm-600',
+    replied: 'bg-green-100 text-green-800',
+    stopped: 'bg-warm-200 text-warm-600',
+    bounced: 'bg-red-100 text-red-700',
+    opted_out: 'bg-warm-200 text-warm-600',
+  }[value] || 'bg-warm-100 text-warm-600'
+  return <span className={`rounded px-2 py-0.5 text-xs ${color}`}>seq: {value}</span>
+}
+
+function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | null; maxTouches: number }) {
   const hasDraft = m && m.status === 'draft'
   const isSent = p.status === 'sent' || (m && (m.status === 'sent' || m.status === 'dry_run'))
+  const inSequence = p.current_touch >= 1 && ['active', 'completed'].includes(p.sequence_status)
+  const dueText = p.next_touch_due_at ? `next touch due ${new Date(p.next_touch_due_at).toLocaleDateString()}` : ''
 
   return (
     <div className="rounded-lg border border-warm-200 bg-white p-4">
@@ -92,13 +111,17 @@ function ProspectCard({ p, m }: { p: ProspectRow; m: MessageRow | null }) {
             {p.contact_email}{p.role_title ? ` · ${p.role_title}` : ''}{p.destination ? ` · ${p.destination}` : ''}
           </div>
           {p.signal && <div className="mt-1 text-xs text-warm-500"><span className="text-warm-400">signal:</span> {p.signal}</div>}
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <SeqPill value={p.sequence_status} />
+            <span className="text-xs text-warm-500">touch {p.current_touch}/{maxTouches}{dueText ? ` · ${dueText}` : ''}</span>
+          </div>
         </div>
         <StatusPill value={p.status} />
       </div>
 
       {m && (m.subject || m.body) && (
         <div className="mt-3 rounded-md bg-warm-50 p-3">
-          <div className="text-xs font-medium text-warm-600">Subject: {m.subject}</div>
+          <div className="text-xs font-medium text-warm-600">Touch {m.touch_number} · Subject: {m.subject}</div>
           <div className="mt-1 whitespace-pre-wrap text-sm text-warm-800">{m.body}</div>
           {m.error && <div className="mt-2 text-xs text-red-600">error: {m.error}</div>}
           {isSent && <div className="mt-2 text-xs text-green-700">✓ {m.status}{m.resend_id ? ` (${m.resend_id})` : ''}</div>}
@@ -129,6 +152,22 @@ function ProspectCard({ p, m }: { p: ProspectRow; m: MessageRow | null }) {
             <input type="hidden" name="campaign_id" value={p.campaign_id} />
             <button className="rounded-lg border border-warm-300 px-3 py-1.5 text-sm text-warm-600 hover:bg-warm-50">Suppress</button>
           </form>
+        )}
+        {inSequence && (
+          <>
+            <form action={markRepliedAction}>
+              <input type="hidden" name="prospect_id" value={p.id} />
+              <input type="hidden" name="campaign_id" value={p.campaign_id} />
+              <button className="rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-800 hover:bg-green-100">
+                Replied → hand to concierge
+              </button>
+            </form>
+            <form action={stopSequenceAction}>
+              <input type="hidden" name="prospect_id" value={p.id} />
+              <input type="hidden" name="campaign_id" value={p.campaign_id} />
+              <button className="rounded-lg border border-warm-300 px-3 py-1.5 text-sm text-warm-600 hover:bg-warm-50">Stop sequence</button>
+            </form>
+          </>
         )}
       </div>
     </div>

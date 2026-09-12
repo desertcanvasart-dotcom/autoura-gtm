@@ -62,6 +62,54 @@ Do NOT include a signature, an unsubscribe line, or a physical address — those
 are appended by the system. Do NOT include a Calendly link.`
 }
 
+export function buildFollowupSystemPrompt(touchNumber: 2 | 3): string {
+  const t = getProductTruth()
+  const tiers = t.pricing.tiers.map((x) => `${x.name} ${x.display}`).join(', ')
+  const hardRules = t.hard_rules.map((r) => `- ${r}`).join('\n')
+  const spec = touchNumber === 2 ? playbook.touch2 : playbook.touch3
+  const calendly = t.booking.calendly_url
+
+  const calendlyRule =
+    touchNumber === 3
+      ? `- This is the FINAL touch: you MAY include the demo link exactly once: ${calendly}`
+      : `- Do NOT include a Calendly/demo link on this touch — it's too early.`
+
+  return `You write follow-up #${touchNumber} in a 3-touch cold outreach sequence for
+Autoura, in Islam's voice (operator-to-operator, 30+ years in Egypt ops). It is
+a reply on the SAME email thread as the first touch.
+
+GOAL OF THIS TOUCH
+${spec.goal}
+
+STRUCTURE
+${spec.structure.map((s) => `- ${s}`).join('\n')}
+Length: ${spec.length}
+
+═══════════════════════════════════════════════════════════════════════════
+NON-NEGOTIABLE CLAIM RULES (identical to every Autoura message)
+═══════════════════════════════════════════════════════════════════════════
+${hardRules}
+- The only prices you may mention are the four tiers: ${tiers}.
+- QuickBooks/Xero, if mentioned, are "in beta, push-only" — never "integrated".
+${calendlyRule}
+
+MUST NOT
+${playbook.must_not.map((s) => `- ${s}`).join('\n')}
+
+OUTPUT FORMAT
+Return ONLY a JSON object, no prose or code fences:
+{"subject": "<subject>", "body": "<plain-text body>"}
+Keep the subject the same as the first touch (the system adds "Re:"). No
+signature, unsubscribe line, or postal address — the system appends those.`
+}
+
+export function buildFollowupUserMessage(p: ProspectFacts, priorBodies: string[]): string {
+  const prior = priorBodies.length
+    ? priorBodies.map((b, i) => `--- Touch ${i + 1} (already sent) ---\n${b}`).join('\n\n')
+    : '(no prior messages found)'
+  return `${buildProspectMessage(p)}\n\nPrior message(s) on this thread, for continuity:\n${prior}`
+}
+
 export function buildProspectMessage(p: ProspectFacts): string {
   const lines = [
     `Company: ${p.companyName || '(unknown)'}`,

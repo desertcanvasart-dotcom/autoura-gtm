@@ -11,11 +11,14 @@ import {
   upsertDraft,
   markMessageSent,
   setProspectStatus,
+  advanceSequenceAfterSend,
+  setSequenceStatus,
 } from '@/lib/outbound/db'
 import { parseProspectsCsv } from '@/lib/outbound/csv'
 import { draftTouch1 } from '@/lib/outbound/copywriter'
 import { sendOutbound } from '@/lib/outbound/sender'
 import { addSuppression } from '@/lib/outbound/suppression'
+import { handoffToConcierge } from '@/lib/outbound/handoff'
 
 export async function createCampaignAction(formData: FormData) {
   const name = String(formData.get('name') || '').trim()
@@ -60,15 +63,34 @@ export async function approveSendAction(formData: FormData) {
   const outcome = await sendOutbound(m, p, c)
   if (outcome.status === 'suppressed') {
     await setProspectStatus(p.id, 'suppressed')
+    await setSequenceStatus(p.id, 'opted_out')
     await markMessageSent(m.id, { status: 'failed', error: 'suppressed' })
   } else if (outcome.status === 'failed') {
     await markMessageSent(m.id, { status: 'failed', error: outcome.error })
     await setProspectStatus(p.id, 'failed')
   } else {
     await markMessageSent(m.id, { status: outcome.status, resendId: outcome.resendId })
-    await setProspectStatus(p.id, 'sent')
+    // Advance the sequence: record this touch and schedule the next (or complete).
+    await advanceSequenceAfterSend(p, c, m.touch_number)
   }
   revalidatePath(`/admin/outbound/${p.campaign_id}`)
+}
+
+export async function markRepliedAction(formData: FormData) {
+  const prospectId = String(formData.get('prospect_id') || '')
+  const campaignId = String(formData.get('campaign_id') || '')
+  const p = await getProspect(prospectId)
+  if (!p) return
+  await setSequenceStatus(p.id, 'replied') // stops any further touches
+  await handoffToConcierge(p) // creates a gtm-outbound lead in /admin
+  if (campaignId) revalidatePath(`/admin/outbound/${campaignId}`)
+}
+
+export async function stopSequenceAction(formData: FormData) {
+  const prospectId = String(formData.get('prospect_id') || '')
+  const campaignId = String(formData.get('campaign_id') || '')
+  if (prospectId) await setSequenceStatus(prospectId, 'stopped')
+  if (campaignId) revalidatePath(`/admin/outbound/${campaignId}`)
 }
 
 export async function suppressAction(formData: FormData) {
@@ -76,6 +98,9 @@ export async function suppressAction(formData: FormData) {
   const prospectId = String(formData.get('prospect_id') || '')
   const campaignId = String(formData.get('campaign_id') || '')
   if (email) await addSuppression(email, 'manual', 'Suppressed from admin')
-  if (prospectId) await setProspectStatus(prospectId, 'suppressed')
+  if (prospectId) {
+    await setProspectStatus(prospectId, 'suppressed')
+    await setSequenceStatus(prospectId, 'opted_out')
+  }
   if (campaignId) revalidatePath(`/admin/outbound/${campaignId}`)
 }

@@ -3,7 +3,12 @@
 // ============================================================================
 import Anthropic from '@anthropic-ai/sdk'
 import { AGENT_MODEL, createMessageWithRetry } from '@/lib/ai/anthropic-client'
-import { buildOutboundSystemPrompt, buildProspectMessage } from '@/lib/ai/outbound-prompt'
+import {
+  buildOutboundSystemPrompt,
+  buildProspectMessage,
+  buildFollowupSystemPrompt,
+  buildFollowupUserMessage,
+} from '@/lib/ai/outbound-prompt'
 import type { ProspectRow } from './db'
 
 export interface DraftedTouch {
@@ -55,6 +60,43 @@ export async function draftTouch1(prospect: ProspectRow): Promise<DraftedTouch> 
   const parsed = extractJson(text)
   if (!parsed?.subject || !parsed?.body) {
     throw new Error('Copywriter did not return a valid {subject, body} draft')
+  }
+  return { subject: parsed.subject.trim(), body: parsed.body.trim() }
+}
+
+function facts(p: ProspectRow) {
+  return {
+    companyName: p.company_name,
+    contactName: p.contact_name,
+    roleTitle: p.role_title,
+    destination: p.destination,
+    signal: p.signal,
+  }
+}
+
+/** Draft follow-up touch 2 or 3, given the prior sent bodies for thread continuity. */
+export async function draftFollowup(
+  prospect: ProspectRow,
+  touchNumber: 2 | 3,
+  priorBodies: string[]
+): Promise<DraftedTouch> {
+  const response = await createMessageWithRetry({
+    model: AGENT_MODEL,
+    max_tokens: 600,
+    system: [
+      { type: 'text', text: buildFollowupSystemPrompt(touchNumber), cache_control: { type: 'ephemeral' } },
+    ],
+    messages: [{ role: 'user', content: buildFollowupUserMessage(facts(prospect), priorBodies) }],
+  })
+
+  const text = response.content
+    .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('\n')
+
+  const parsed = extractJson(text)
+  if (!parsed?.subject || !parsed?.body) {
+    throw new Error(`Copywriter did not return a valid follow-up (touch ${touchNumber})`)
   }
   return { subject: parsed.subject.trim(), body: parsed.body.trim() }
 }

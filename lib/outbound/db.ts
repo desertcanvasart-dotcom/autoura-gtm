@@ -12,9 +12,13 @@ export interface CampaignRow {
   name: string
   from_email: string | null
   status: string
+  touch_interval_days: number
+  max_touches: number
   created_at: string
   updated_at: string
 }
+
+export type SequenceStatus = 'active' | 'completed' | 'replied' | 'stopped' | 'bounced' | 'opted_out'
 
 export interface ProspectRow {
   id: string
@@ -26,6 +30,9 @@ export interface ProspectRow {
   destination: string | null
   signal: string | null
   status: ProspectStatus
+  sequence_status: SequenceStatus
+  current_touch: number
+  next_touch_due_at: string | null
   created_at: string
   updated_at: string
 }
@@ -168,14 +175,19 @@ export async function getLatestMessage(prospectId: string): Promise<MessageRow |
   return (data as MessageRow) ?? null
 }
 
-export async function upsertDraft(prospect: ProspectRow, subject: string, body: string): Promise<MessageRow> {
+export async function upsertDraft(
+  prospect: ProspectRow,
+  subject: string,
+  body: string,
+  touchNumber = 1
+): Promise<MessageRow> {
   const supabase = getSupabaseAdmin()
-  // Replace any existing non-sent draft for touch 1.
+  // Replace any existing non-sent draft for this touch.
   await supabase
     .from('outbound_messages')
     .delete()
     .eq('prospect_id', prospect.id)
-    .eq('touch_number', 1)
+    .eq('touch_number', touchNumber)
     .in('status', ['draft', 'canceled'])
 
   const { data, error } = await supabase
@@ -183,7 +195,7 @@ export async function upsertDraft(prospect: ProspectRow, subject: string, body: 
     .insert({
       prospect_id: prospect.id,
       campaign_id: prospect.campaign_id,
-      touch_number: 1,
+      touch_number: touchNumber,
       channel: 'email',
       subject,
       body,
@@ -192,8 +204,95 @@ export async function upsertDraft(prospect: ProspectRow, subject: string, body: 
     .select('*')
     .single()
   if (error || !data) throw new Error(`upsertDraft failed: ${error?.message}`)
-  await setProspectStatus(prospect.id, 'drafted')
+  // Clear the due timestamp so the scheduler doesn't re-draft while it waits
+  // for approval; keep the prospect 'active' in the sequence.
+  await supabase
+    .from('outbound_prospects')
+    .update({ status: 'drafted', next_touch_due_at: null })
+    .eq('id', prospect.id)
   return data as MessageRow
+}
+
+// ---------------- Sequencing (Slice B) ----------------
+
+/** Advance the sequence after a touch is successfully sent. */
+export async function advanceSequenceAfterSend(
+  prospect: ProspectRow,
+  campaign: CampaignRow,
+  touchNumber: number
+): Promise<void> {
+  const supabase = getSupabaseAdmin()
+  const hasMore = touchNumber < campaign.max_touches
+  const nextDue = hasMore
+    ? new Date(Date.now() + campaign.touch_interval_days * 86400_000).toISOString()
+    : null
+  await supabase
+    .from('outbound_prospects')
+    .update({
+      status: 'sent',
+      current_touch: touchNumber,
+      sequence_status: hasMore ? 'active' : 'completed',
+      next_touch_due_at: nextDue,
+    })
+    .eq('id', prospect.id)
+}
+
+export interface DueFollowup {
+  prospect: ProspectRow
+  campaign: CampaignRow
+}
+
+/** Prospects whose next touch is due (active, past due, still under the cap). */
+export async function listDueFollowups(limit = 25): Promise<DueFollowup[]> {
+  const supabase = getSupabaseAdmin()
+  const { data: prospects } = await supabase
+    .from('outbound_prospects')
+    .select('*')
+    .eq('sequence_status', 'active')
+    .not('next_touch_due_at', 'is', null)
+    .lte('next_touch_due_at', new Date().toISOString())
+    .order('next_touch_due_at', { ascending: true })
+    .limit(limit)
+
+  const rows = (prospects ?? []) as ProspectRow[]
+  const out: DueFollowup[] = []
+  for (const p of rows) {
+    const campaign = await getCampaign(p.campaign_id)
+    if (!campaign) continue
+    if (p.current_touch >= campaign.max_touches) continue
+    out.push({ prospect: p, campaign })
+  }
+  return out
+}
+
+/** Prior SENT message bodies (ascending by touch), for follow-up continuity. */
+export async function getSentTouches(prospectId: string): Promise<MessageRow[]> {
+  const supabase = getSupabaseAdmin()
+  const { data } = await supabase
+    .from('outbound_messages')
+    .select('*')
+    .eq('prospect_id', prospectId)
+    .in('status', ['sent', 'dry_run'])
+    .order('touch_number', { ascending: true })
+  return (data ?? []) as MessageRow[]
+}
+
+export async function setSequenceStatus(prospectId: string, status: SequenceStatus): Promise<void> {
+  const supabase = getSupabaseAdmin()
+  await supabase
+    .from('outbound_prospects')
+    .update({ sequence_status: status, next_touch_due_at: null })
+    .eq('id', prospectId)
+}
+
+/** Stop every active sequence for an email (used on bounce/complaint webhooks). */
+export async function stopSequencesByEmail(email: string, status: SequenceStatus): Promise<void> {
+  const supabase = getSupabaseAdmin()
+  await supabase
+    .from('outbound_prospects')
+    .update({ sequence_status: status, next_touch_due_at: null })
+    .ilike('contact_email', email.trim())
+    .eq('sequence_status', 'active')
 }
 
 export async function getMessage(id: string): Promise<MessageRow | null> {

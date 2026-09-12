@@ -2,7 +2,7 @@
 // OUTBOUND GUARDS — copywriter prompt claims-drift + CSV parsing
 // ============================================================================
 import { describe, it, expect } from 'vitest'
-import { buildOutboundSystemPrompt } from '@/lib/ai/outbound-prompt'
+import { buildOutboundSystemPrompt, buildFollowupSystemPrompt } from '@/lib/ai/outbound-prompt'
 import { parseProspectsCsv } from '@/lib/outbound/csv'
 
 const ALLOWED_DOLLARS = new Set([69, 189, 449, 1200])
@@ -34,6 +34,31 @@ describe('outbound copywriter prompt — claims guardrails', () => {
 
   it('instructs to ground claims in the truth file only', () => {
     expect(prompt.toLowerCase()).toMatch(/only make claims|claims from|grounded/)
+  })
+})
+
+describe('follow-up prompts (Slice B) — claims guardrails + Calendly gating', () => {
+  const t2 = buildFollowupSystemPrompt(2)
+  const t3 = buildFollowupSystemPrompt(3)
+
+  it('both carry the beta caveat and no unpublished prices', () => {
+    for (const p of [t2, t3]) {
+      expect(p).toContain('in beta, push-only')
+      expect(extractDollars(p).filter((d) => !ALLOWED_DOLLARS.has(d))).toEqual([])
+    }
+  })
+
+  it('touch 2 must NOT include the Calendly link; touch 3 must', () => {
+    expect(t2).toMatch(/do NOT include a Calendly/i)
+    expect(t2).not.toContain('https://calendly.com/autoura')
+    expect(t3).toContain('https://calendly.com/autoura')
+  })
+
+  it('both demand strict JSON output', () => {
+    for (const p of [t2, t3]) {
+      expect(p).toMatch(/"subject"/)
+      expect(p).toMatch(/"body"/)
+    }
   })
 })
 

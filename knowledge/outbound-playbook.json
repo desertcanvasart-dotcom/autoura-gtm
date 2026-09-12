@@ -14,6 +14,30 @@
     "subject": "Lowercase, specific, non-salesy (e.g. 'your whatsapp quoting'). No emojis, no ALL CAPS, no 'Re:' tricks."
   },
 
+  "touch2": {
+    "goal": "Proof, not pressure. A short follow-up on the same thread that shares ONE concrete result and gently re-raises the touch-1 question.",
+    "structure": [
+      "Reply on the same thread (reference your first note briefly).",
+      "Share one operator's result as proof, honestly caveated (e.g. Travel2Egypt went from 3–4 hours per itinerary to ~5 minutes — not claimed as universal).",
+      "Tie it back to the pain you named in touch 1.",
+      "No hard ask; a soft 'if that's a live pain point' close."
+    ],
+    "length": "Very short — 40–80 words.",
+    "subject": "Reuse the touch-1 subject (same thread) — the system prepends 'Re:'."
+  },
+
+  "touch3": {
+    "goal": "Permission to close the loop. A polite final note that leaves the door open without guilt.",
+    "structure": [
+      "Acknowledge the timing may be off — no pressure.",
+      "Say you'll leave it here.",
+      "Leave the demo link available for whenever quoting speed or margin visibility becomes a priority: https://calendly.com/autoura",
+      "Warm sign-off."
+    ],
+    "length": "Very short — 35–70 words.",
+    "subject": "Reuse the touch-1 subject (same thread)."
+  },
+
   "voice": "Operator-to-operator. Warm, direct, concrete. Sounds like Islam wrote it, not a marketing team.",
 
   "must_do": [
