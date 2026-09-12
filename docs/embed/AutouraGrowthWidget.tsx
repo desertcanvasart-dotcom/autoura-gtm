@@ -76,16 +76,16 @@ export default function AutouraGrowthWidget() {
           borderRadius: '9999px',
           border: 0,
           cursor: 'pointer',
-          background: '#0f766e',
+          background: '#647C47',
           color: '#fff',
-          boxShadow: '0 8px 24px rgba(15,118,110,0.42)',
+          boxShadow: '0 8px 24px rgba(100,124,71,0.42)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           transition: 'transform 120ms ease, background 120ms ease',
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = '#115e59')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = '#0f766e')}
+        onMouseEnter={(e) => (e.currentTarget.style.background = '#536639')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = '#647C47')}
       >
         {open ? <CloseIcon /> : <ChatIcon />}
       </button>
