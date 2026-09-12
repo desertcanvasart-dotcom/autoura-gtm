@@ -80,6 +80,9 @@ export async function sendOutbound(
       body: JSON.stringify({
         from: fromAddress(campaign),
         to: [prospect.contact_email],
+        // Send from the (isolated) sending domain, but route replies to a real
+        // monitored inbox — a sending subdomain doesn't receive mail.
+        ...(process.env.OUTBOUND_REPLY_TO ? { reply_to: process.env.OUTBOUND_REPLY_TO } : {}),
         subject: message.subject || '(no subject)',
         html,
         text,
