@@ -106,16 +106,14 @@ function hostOf(raw: string): string | null {
 }
 
 /** URLs returned by web_search / web_fetch results in the response content. */
-export function collectSeenUrls(blocks: unknown[]): string[] {
+export function collectSeenUrls(blocks: Anthropic.Messages.ContentBlock[]): string[] {
   const seen = new Set<string>()
-  for (const block of blocks) {
-    const b = block as { type?: string; content?: unknown }
+  for (const b of blocks) {
+    // Success content is a list of results; an error is a single object.
     if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) {
-      // Success: a list of results. Errors are a single object (no url).
-      for (const r of b.content as { url?: unknown }[]) if (typeof r.url === 'string') seen.add(r.url)
-    } else if (b.type === 'web_fetch_tool_result' && b.content && typeof b.content === 'object') {
-      const url = (b.content as { url?: unknown }).url
-      if (typeof url === 'string') seen.add(url)
+      for (const r of b.content) seen.add(r.url)
+    } else if (b.type === 'web_fetch_tool_result' && b.content.type === 'web_fetch_result') {
+      seen.add(b.content.url)
     }
   }
   return [...seen]
@@ -180,20 +178,18 @@ export function extractEnrichmentJson(text: string): EnrichmentResult | null {
 // ---------------------------------------------------------------------------
 
 // Server tools run on Anthropic's side. The _20260209 variants (dynamic
-// filtering) need a Claude 5-era / 4.6+ model. @anthropic-ai/sdk 0.68 only has
-// types for web_search_20250305, so these are cast; the SDK sends tool JSON and
-// returns response blocks as-is.
-const RESEARCH_TOOLS = [
+// filtering) need a Claude 5-era / 4.6+ model.
+const RESEARCH_TOOLS: Anthropic.Messages.ToolUnion[] = [
   { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
   { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 6, max_content_tokens: 12000 },
-] as unknown as Anthropic.Messages.ToolUnion[]
+]
 
 // A long server-tool turn can stop with pause_turn; resume it this many times.
 const MAX_CONTINUATIONS = 4
 
 export async function researchProspect(target: ResearchTarget): Promise<{ result: EnrichmentResult; seenUrls: string[] }> {
   const messages: Anthropic.Messages.MessageParam[] = [{ role: 'user', content: buildEnrichmentUserMessage(target) }]
-  const allBlocks: unknown[] = []
+  const allBlocks: Anthropic.Messages.ContentBlock[] = []
   let response: Anthropic.Messages.Message | null = null
 
   for (let i = 0; i <= MAX_CONTINUATIONS; i++) {
@@ -214,8 +210,8 @@ export async function researchProspect(target: ResearchTarget): Promise<{ result
   if (response.stop_reason === 'refusal') throw new Error('The research model declined this request')
   if (response.stop_reason === 'pause_turn') throw new Error('Research did not finish within the continuation limit')
 
-  const text = (allBlocks as { type?: string; text?: string }[])
-    .filter((b) => b.type === 'text' && typeof b.text === 'string')
+  const text = allBlocks
+    .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
     .map((b) => b.text)
     .join('\n')
   const result = extractEnrichmentJson(text)
