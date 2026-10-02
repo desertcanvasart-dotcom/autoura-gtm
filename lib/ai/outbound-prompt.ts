@@ -120,3 +120,49 @@ export function buildProspectMessage(p: ProspectFacts): string {
   ]
   return `Draft Touch 1 for this prospect:\n${lines.join('\n')}`
 }
+
+// ---------------------------------------------------------------------------
+// LinkedIn connection note (assisted channel — a person sends it by hand)
+// ---------------------------------------------------------------------------
+
+export function buildLinkedInSystemPrompt(maxChars: number): string {
+  const t = getProductTruth()
+  const hardRules = t.hard_rules.map((r) => `- ${r}`).join('\n')
+  const spec = playbook.linkedin_note
+
+  return `You write a LinkedIn CONNECTION REQUEST NOTE for Islam, who built Autoura
+(a quoting/operations platform for tour operators and DMCs) after 30+ years
+running tour operations in Egypt. Operator-to-operator, warm, plain.
+
+GOAL
+${spec.goal}
+
+STRUCTURE
+${spec.structure.map((s) => `- ${s}`).join('\n')}
+Length: ${spec.length}
+
+HARD LIMIT: the note must be at most ${maxChars} characters including spaces.
+LinkedIn cuts anything longer. Count carefully and stay well under.
+
+RULES
+${spec.rules.map((s) => `- ${s}`).join('\n')}
+${hardRules}
+
+MUST NOT
+${playbook.must_not.map((s) => `- ${s}`).join('\n')}
+
+OUTPUT FORMAT
+Return ONLY a JSON object, no prose or code fences:
+{"note": "<the connection note, plain text, no line breaks>"}`
+}
+
+export function buildLinkedInUserMessage(p: ProspectFacts): string {
+  const lines = [
+    `Company: ${p.companyName || '(unknown)'}`,
+    `Contact: ${p.contactName || '(unknown)'}`,
+    `Role: ${p.roleTitle || '(unknown)'}`,
+    `Destination(s): ${p.destination || '(unknown)'}`,
+    `Signal (the real, specific observation): ${p.signal || '(none: keep it honest and general to their destination; do not invent specifics)'}`,
+  ]
+  return `Write the LinkedIn connection note for this prospect:\n${lines.join('\n')}`
+}

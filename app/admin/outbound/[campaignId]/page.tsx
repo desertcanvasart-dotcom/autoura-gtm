@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import CopyButton from '@/components/CopyButton'
+import { linkedInNoteMaxChars } from '@/lib/outbound/linkedin'
 import { getCampaign, listProspects, listMessagesByProspect, type ProspectRow, type MessageRow } from '@/lib/outbound/db'
-import { importCsvAction, draftAction, approveSendAction, suppressAction, markRepliedAction, stopSequenceAction, retryFailedAction, enrichAction, enrichBatchAction } from '../actions'
+import { importCsvAction, draftAction, approveSendAction, suppressAction, markRepliedAction, stopSequenceAction, retryFailedAction, enrichAction, enrichBatchAction, draftLinkedInAction, markLinkedInSentAction } from '../actions'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -29,6 +31,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
 
   const prospects = await listProspects(campaignId)
   const latestByProspect = await listMessagesByProspect(prospects.map((p) => p.id))
+  const linkedInByProspect = await listMessagesByProspect(prospects.map((p) => p.id), 'linkedin')
 
   const toEnrich = prospects.filter(
     (p) => !p.enrichment_status && p.current_touch === 0 && p.sequence_status === 'active' && p.status !== 'suppressed'
@@ -57,7 +60,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
       <section className="mt-6 rounded-lg border border-warm-200 bg-white p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-warm-500">Import prospects (CSV)</h2>
         <p className="mt-1 text-xs text-warm-500">
-          Header row required. Columns (aliases ok): <code>company, contact, email, role, destination, signal, website</code>. Only <code>email</code> is required. Leave <code>signal</code> blank to have it researched (Enrich). Suppressed + duplicate emails are skipped automatically.
+          Header row required. Columns (aliases ok): <code>company, contact, email, role, destination, signal, website, linkedin</code>. Only <code>email</code> is required. Leave <code>signal</code> blank to have it researched (Enrich). Suppressed + duplicate emails are skipped automatically.
         </p>
         <form action={importCsvAction} className="mt-3">
           <input type="hidden" name="campaign_id" value={campaign.id} />
@@ -92,7 +95,13 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
       {/* Prospects */}
       <section className="mt-4 space-y-4">
         {prospects.map((p) => (
-          <ProspectCard key={p.id} p={p} m={latestByProspect.get(p.id) || null} maxTouches={campaign.max_touches} />
+          <ProspectCard
+            key={p.id}
+            p={p}
+            m={latestByProspect.get(p.id) || null}
+            li={linkedInByProspect.get(p.id) || null}
+            maxTouches={campaign.max_touches}
+          />
         ))}
       </section>
     </main>
@@ -157,13 +166,70 @@ function EnrichmentSummary({ p }: { p: ProspectRow }) {
   )
 }
 
-function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | null; maxTouches: number }) {
+function LinkedInPanel({ p, li }: { p: ProspectRow; li: MessageRow | null }) {
+  const canDraft = p.sequence_status === 'active' && p.status !== 'suppressed' && li?.status !== 'sent'
+  if (!p.linkedin_url && !li && !canDraft) return null
+  const maxChars = linkedInNoteMaxChars()
+  const note = li?.status === 'draft' ? li.body || '' : ''
+
+  return (
+    <div className="mt-3 rounded-md border border-warm-100 p-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-warm-500">
+        <span className="font-medium text-warm-600">LinkedIn</span>
+        {/* linkedin_url is normalized to https://www.linkedin.com/... on import */}
+        {p.linkedin_url && (
+          <a href={p.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
+            open profile ↗
+          </a>
+        )}
+        {li?.status === 'sent' && (
+          <span className="text-green-700">✓ connection note sent{li.sent_at ? ` ${new Date(li.sent_at).toLocaleDateString()}` : ''}</span>
+        )}
+        {li?.status === 'canceled' && <span>draft canceled (sequence stopped)</span>}
+      </div>
+
+      {note && (
+        <div className="mt-2">
+          <div className="whitespace-pre-wrap rounded bg-warm-50 p-2 text-sm text-warm-800">{note}</div>
+          <div className={`mt-1 text-xs ${note.length > maxChars ? 'text-red-600' : 'text-warm-400'}`}>
+            {note.length}/{maxChars} characters · send it yourself on LinkedIn, then mark it sent
+          </div>
+        </div>
+      )}
+      {li?.status === 'failed' && li.error && <div className="mt-2 text-xs text-red-600">draft failed: {li.error}</div>}
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        {note && <CopyButton text={note} label="Copy note" />}
+        {note && (
+          <form action={markLinkedInSentAction}>
+            <input type="hidden" name="message_id" value={li!.id} />
+            <button className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark">
+              Mark sent on LinkedIn
+            </button>
+          </form>
+        )}
+        {canDraft && (
+          <form action={draftLinkedInAction}>
+            <input type="hidden" name="prospect_id" value={p.id} />
+            <button className="rounded-lg border border-warm-300 px-3 py-1.5 text-sm text-warm-700 hover:bg-warm-50">
+              {note ? 'Re-draft note' : 'Draft LinkedIn note'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ProspectCard({ p, m, li, maxTouches }: { p: ProspectRow; m: MessageRow | null; li: MessageRow | null; maxTouches: number }) {
   const hasDraft = m && m.status === 'draft' && p.sequence_status === 'active'
   const canRetry = m && m.status === 'failed' && m.error !== 'suppressed' && p.sequence_status === 'active' && p.status !== 'suppressed'
   const isSent = p.status === 'sent' || (m && (m.status === 'sent' || m.status === 'dry_run'))
   // Touch 1 can only be (re)drafted before anything has gone out.
   const canDraftTouch1 = p.current_touch === 0 && !isSent && p.status !== 'suppressed'
-  const inSequence = p.current_touch >= 1 && ['active', 'completed'].includes(p.sequence_status)
+  const linkedInSent = li?.status === 'sent'
+  // Contacted on either channel: a reply (or a stop) can now be recorded.
+  const inSequence = (p.current_touch >= 1 || linkedInSent) && ['active', 'completed'].includes(p.sequence_status)
   const canEnrich = p.current_touch === 0 && p.sequence_status === 'active' && p.status !== 'suppressed'
   const dueText = p.next_touch_due_at ? `next touch due ${new Date(p.next_touch_due_at).toLocaleDateString()}` : ''
 
@@ -196,6 +262,8 @@ function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | nu
           {isSent && <div className="mt-2 text-xs text-green-700">✓ {m.status}{m.resend_id ? ` (${m.resend_id})` : ''}</div>}
         </div>
       )}
+
+      <LinkedInPanel p={p} li={li} />
 
       <div className="mt-3 flex flex-wrap gap-2">
         {canEnrich && (

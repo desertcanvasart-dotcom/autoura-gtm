@@ -19,6 +19,10 @@ import {
   requeueFailedMessage,
   markProspectReplied,
   listProspectsToEnrich,
+  listMessagesByProspect,
+  upsertLinkedInDraft,
+  saveLinkedInFailure,
+  markLinkedInSent,
 } from '@/lib/outbound/db'
 import { parseProspectsCsv } from '@/lib/outbound/csv'
 import { draftTouch1 } from '@/lib/outbound/copywriter'
@@ -26,6 +30,7 @@ import { sendOutbound } from '@/lib/outbound/sender'
 import { addSuppression } from '@/lib/outbound/suppression'
 import { handoffToConcierge } from '@/lib/outbound/handoff'
 import { enrichProspect } from '@/lib/outbound/enrichment'
+import { draftLinkedInNote } from '@/lib/outbound/linkedin'
 
 export async function createCampaignAction(formData: FormData) {
   const name = String(formData.get('name') || '').trim()
@@ -85,7 +90,8 @@ export async function draftAction(formData: FormData) {
 export async function approveSendAction(formData: FormData) {
   const messageId = String(formData.get('message_id') || '')
   const m = await getMessage(messageId)
-  if (!m || m.status !== 'draft') return
+  // Email only: LinkedIn notes are sent by a person on LinkedIn, never from here.
+  if (!m || m.status !== 'draft' || m.channel !== 'email') return
   const p = await getProspect(m.prospect_id)
   const c = p ? await getCampaign(p.campaign_id) : null
   if (!p || !c) return
@@ -123,7 +129,7 @@ export async function approveSendAction(formData: FormData) {
 export async function retryFailedAction(formData: FormData) {
   const messageId = String(formData.get('message_id') || '')
   const m = await getMessage(messageId)
-  if (!m || m.status !== 'failed') return
+  if (!m || m.status !== 'failed' || m.channel !== 'email') return
   const p = await getProspect(m.prospect_id)
   if (!p) return
   // Only retry the prospect's latest message, and only while the sequence is live.
@@ -132,6 +138,32 @@ export async function retryFailedAction(formData: FormData) {
     await requeueFailedMessage(m) // back to draft → needs approval again
   }
   revalidatePath(`/admin/outbound/${p.campaign_id}`)
+}
+
+// ---------------- LinkedIn (assisted: a person sends it on LinkedIn) ----------------
+
+export async function draftLinkedInAction(formData: FormData) {
+  const prospectId = String(formData.get('prospect_id') || '')
+  const p = await getProspect(prospectId)
+  if (!p || p.sequence_status !== 'active' || p.status === 'suppressed') return
+  // One connection note per prospect: don't redraft after it's been sent.
+  const latest = (await listMessagesByProspect([p.id], 'linkedin')).get(p.id)
+  if (latest?.status === 'sent') return
+  try {
+    await upsertLinkedInDraft(p, await draftLinkedInNote(p))
+  } catch (err) {
+    console.error(`[linkedin] draft failed for prospect ${p.id}`, err)
+    await saveLinkedInFailure(p, (err as Error).message)
+  }
+  revalidatePath(`/admin/outbound/${p.campaign_id}`)
+}
+
+export async function markLinkedInSentAction(formData: FormData) {
+  const messageId = String(formData.get('message_id') || '')
+  const m = await getMessage(messageId)
+  if (!m || m.channel !== 'linkedin') return
+  await markLinkedInSent(m.id)
+  revalidatePath(`/admin/outbound/${m.campaign_id}`)
 }
 
 export async function markRepliedAction(formData: FormData) {

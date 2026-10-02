@@ -21,13 +21,15 @@ Standalone GTM service for **selling Autoura (the product) to travel agencies, t
 - **Multi-touch sequencing** — after Touch 1, Touch 2 (proof) and Touch 3 (permission-to-close) are auto-drafted when due into the same approval queue. A daily GitHub Action ([`.github/workflows/outbound-followups.yml`](.github/workflows/outbound-followups.yml)) calls `/api/cron/outbound-followups` (Bearer `CRON_SECRET`); `OUTBOUND_INTERNAL_CRON=true` is an in-app alternative.
 - **Stop conditions** — a prospect's reply, detected automatically (their reply inbox forwards a copy to Resend, which posts `email.received` to the webhook; out-of-office and bounce notices are ignored — [`lib/outbound/replies.ts`](lib/outbound/replies.ts)) or marked with "Replied → hand to concierge"; either creates one `gtm-outbound` lead in `/admin`. Also manual stop, opt-out, and bounce/complaint via the signed Resend webhook at `/api/outbound/resend-webhook`. Stopping a sequence cancels any pending draft; failed sends can be retried (back to the approval queue).
 
-**Not built yet** (later phases): escalation alerts to Slack, LinkedIn tooling, WhatsApp inbound.
+- **LinkedIn (assisted)** — **Draft LinkedIn note** has Claude write a short connection-request note (same voice and claim rules, within LinkedIn's character limit, no links or prices). A person copies it, sends it on LinkedIn themselves, and clicks **Mark sent on LinkedIn** ([`lib/outbound/linkedin.ts`](lib/outbound/linkedin.ts)). Nothing is automated on LinkedIn: it has no API for this and its User Agreement forbids automating it. Add profile URLs with a `linkedin` CSV column.
+
+**Not built yet** (later phases): escalation alerts to Slack, WhatsApp inbound.
 
 ## Setup
 
 1. `npm install`
 2. Create a **new/separate** Supabase project (not the autoura-saas one).
-3. Apply the migrations in order — [`001_gtm_tables.sql`](supabase/migrations/001_gtm_tables.sql), [`002_outbound_tables.sql`](supabase/migrations/002_outbound_tables.sql), [`003_outbound_sequencing.sql`](supabase/migrations/003_outbound_sequencing.sql), [`004_prospect_enrichment.sql`](supabase/migrations/004_prospect_enrichment.sql) — in the Supabase SQL editor (or via the Supabase CLI). All are safe to re-run.
+3. Apply the migrations in order — [`001_gtm_tables.sql`](supabase/migrations/001_gtm_tables.sql), [`002_outbound_tables.sql`](supabase/migrations/002_outbound_tables.sql), [`003_outbound_sequencing.sql`](supabase/migrations/003_outbound_sequencing.sql), [`004_prospect_enrichment.sql`](supabase/migrations/004_prospect_enrichment.sql), [`005_linkedin_channel.sql`](supabase/migrations/005_linkedin_channel.sql) — in the Supabase SQL editor (or via the Supabase CLI). All are safe to re-run.
 4. `cp .env.local.example .env.local` and fill in:
    - `ANTHROPIC_API_KEY`
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
@@ -91,12 +93,12 @@ app/widget/                    → iframe-embeddable chat page
 app/admin/                     → transcripts + leads review
 knowledge/outbound-playbook.json → outbound touch angles + copy rules
 lib/ai/outbound-prompt.ts      → copywriter prompts (Touch 1 / follow-ups)
-lib/outbound/*                 → CSV import, enrichment, drafting, suppression, Resend sender,
+lib/outbound/*                 → CSV import, enrichment, drafting, LinkedIn notes, suppression, Resend sender,
                                  sequencer, Svix webhook verification, handoff
 app/admin/outbound/            → campaigns, prospects, approval queue
 app/api/cron/outbound-followups/ → draft due follow-ups (Bearer CRON_SECRET)
 app/api/outbound/resend-webhook/ → bounce/complaint auto-suppression
 app/api/unsubscribe/           → signed one-click unsubscribe
 supabase/migrations/001_*.sql  → gtm_ tables
-supabase/migrations/002–004    → outbound tables, sequencing, enrichment
+supabase/migrations/002–005    → outbound tables, sequencing, enrichment, LinkedIn
 ```
