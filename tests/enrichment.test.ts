@@ -2,6 +2,7 @@
 // PROSPECT ENRICHMENT — target choice, evidence verification, safe filling
 // ============================================================================
 import { describe, it, expect } from 'vitest'
+import type Anthropic from '@anthropic-ai/sdk'
 import {
   normalizeWebsite,
   researchTarget,
@@ -75,9 +76,9 @@ describe('collectSeenUrls', () => {
       { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://a.example/1' }, { type: 'web_search_result', url: 'https://b.example/2' }] },
       { type: 'web_search_tool_result', content: { type: 'web_search_tool_result_error', error_code: 'max_uses_exceeded' } },
       { type: 'web_fetch_tool_result', content: { type: 'web_fetch_result', url: 'https://a.example/1', content: {} } },
-      { type: 'web_fetch_tool_result', content: { type: 'web_fetch_tool_error', error_code: 'url_not_accessible' } },
+      { type: 'web_fetch_tool_result', content: { type: 'web_fetch_tool_result_error', error_code: 'url_not_accessible' } },
     ]
-    expect(collectSeenUrls(blocks).sort()).toEqual(['https://a.example/1', 'https://b.example/2'])
+    expect(collectSeenUrls(blocks as unknown as Anthropic.Messages.ContentBlock[]).sort()).toEqual(['https://a.example/1', 'https://b.example/2'])
   })
 })
 
