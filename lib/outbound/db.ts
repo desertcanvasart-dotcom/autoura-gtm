@@ -316,6 +316,47 @@ export async function stopSequencesByEmail(email: string, status: SequenceStatus
   await cancelPendingDrafts(((data ?? []) as { id: string }[]).map((r) => r.id))
 }
 
+// Sequences a reply can still stop. 'completed' is included: a late reply to the
+// last touch is still a warm lead worth handing off.
+const REPLYABLE_SEQUENCES: SequenceStatus[] = ['active', 'completed']
+
+/**
+ * Mark one prospect as replied, but only if its sequence could still be
+ * replied to. Returns the updated row when THIS call made the change (so the
+ * caller hands off exactly once), or null if it was already replied/stopped.
+ */
+export async function markProspectReplied(prospectId: string): Promise<ProspectRow | null> {
+  const supabase = getSupabaseAdmin()
+  const { data } = await supabase
+    .from('outbound_prospects')
+    .update({ sequence_status: 'replied', status: 'replied', next_touch_due_at: null })
+    .eq('id', prospectId)
+    .in('sequence_status', REPLYABLE_SEQUENCES)
+    .select('*')
+  const row = ((data ?? []) as ProspectRow[])[0] ?? null
+  if (row) await cancelPendingDrafts([row.id])
+  return row
+}
+
+/**
+ * Mark every contacted prospect with this email as replied (automatic reply
+ * detection). Only prospects we've actually emailed (current_touch >= 1) and
+ * whose sequence is still replyable are changed. Returns the rows changed.
+ */
+export async function markRepliedByEmail(email: string): Promise<ProspectRow[]> {
+  const supabase = getSupabaseAdmin()
+  const { data } = await supabase
+    .from('outbound_prospects')
+    .update({ sequence_status: 'replied', status: 'replied', next_touch_due_at: null })
+    .ilike('contact_email', escapeLikePattern(normalizeEmail(email)))
+    .gte('current_touch', 1)
+    .in('sequence_status', REPLYABLE_SEQUENCES)
+    .select('*')
+  const rows = (data ?? []) as ProspectRow[]
+  await cancelPendingDrafts(rows.map((r) => r.id))
+  return rows
+}
+
 /**
  * Atomically move a draft to 'approved'. Returns false if it was no longer a
  * draft (already sent, canceled, or claimed by a concurrent click).
