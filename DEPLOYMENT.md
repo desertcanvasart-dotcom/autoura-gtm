@@ -111,12 +111,13 @@ Do Parts A–E first. Then work through F1–F7 in order. **Leave `OUTBOUND_DRY_
 
 ### F1 — Apply the outbound migrations
 
-In the GTM Supabase project's **SQL Editor**, run these two files in order. Both are safe to re-run.
+In the GTM Supabase project's **SQL Editor**, run these files in order. All are safe to re-run.
 
 1. [`supabase/migrations/002_outbound_tables.sql`](supabase/migrations/002_outbound_tables.sql) — creates `outbound_campaigns`, `outbound_prospects`, `outbound_messages`, `outbound_suppression`.
 2. [`supabase/migrations/003_outbound_sequencing.sql`](supabase/migrations/003_outbound_sequencing.sql) — adds follow-up timing and sequence state.
+3. [`supabase/migrations/004_prospect_enrichment.sql`](supabase/migrations/004_prospect_enrichment.sql) — adds `website` and the enrichment (research) columns.
 
-Verify: **Table Editor** lists the four `outbound_` tables, and `outbound_prospects` has `sequence_status`, `current_touch` and `next_touch_due_at` columns.
+Verify: **Table Editor** lists the four `outbound_` tables, and `outbound_prospects` has `sequence_status`, `current_touch` and `next_touch_due_at` columns, plus `website` and `enrichment_status`.
 
 ### F2 — Set up a sending subdomain in Resend
 
@@ -180,6 +181,7 @@ Use addresses you control (e.g. `you+test1@gmail.com`). Start from [`docs/outbou
 
 - [ ] `https://<railway-domain>/admin/outbound` loads with no "Couldn't load" error. If it errors, F1 wasn't applied.
 - [ ] Create a campaign → paste the CSV → **Import**. Prospects appear.
+- [ ] On a prospect with a real company website (put it in the `website` column, or use a company email address) and an empty `signal`, click **Enrich**. Within about a minute the card shows `research: enriched` with a source link you can open, and the `signal` is filled in. Or `research: no signal` with notes explaining why. Enrichment runs on your Anthropic key and uses web search, so it costs a little per prospect; use **Enrich next 5** for batches.
 - [ ] **Draft touch 1** produces a personalized subject and body that quote only published prices and never call QuickBooks/Xero "integrated".
 - [ ] **Approve (dry-run)** marks it `dry_run`, and the prospect shows `touch 1/3` with a "next touch due" date.
 - [ ] Force a follow-up: in Supabase set that prospect's `next_touch_due_at` to a past time, then run the scheduler (F5). A **Touch 2** draft appears with a `Re:` subject.
@@ -235,6 +237,8 @@ Limits:
 | `/admin` returns 503 | `ADMIN_ACCESS_TOKEN` isn't set on the growth service. Add it (Part B2) and redeploy. |
 | Lead shows `escalated` but no alert email arrives | Railway logs show `[escalation-alert] not sent …` (a variable is missing: `GTM_ESCALATION_EMAIL`, `RESEND_API_KEY`, or a sender) or `[escalation-alert] Resend 4xx …` (usually the sender isn't on a verified domain). Each lead alerts only once, so test with a new chat. Also check spam. |
 | `/admin/outbound` says "Couldn't load … migration 002" | Migrations 002/003 weren't applied to this Supabase project. See F1. |
+| Enrich shows `research: failed` | Open the research details on the card for the error. Railway logs show `[enrichment] prospect … failed`. A `400` mentioning `web_search` or `web_fetch` means the Anthropic organization has web search/fetch turned off (enable it in the Claude Console's privacy/feature settings) or `GTM_AGENT_MODEL` is set to an older model that doesn't support these tools. |
+| Enrich shows `research: no signal` | Nothing specific and verifiable was found, or the company couldn't be identified for sure. The notes say which. Add the company's `website` and **Re-enrich**, or write the signal yourself. |
 | Draft button does nothing / prospect turns `failed` | Drafting calls Claude. Check Railway logs for the Anthropic error, same causes as the chat 404 above. |
 | Approve shows `error: RESEND_API_KEY not configured` | `OUTBOUND_DRY_RUN=false` but no `RESEND_API_KEY`. Set it (F3), or go back to dry-run. |
 | Approve shows `Resend 403` (or another `Resend 4xx`) mentioning the domain | `OUTBOUND_FROM_EMAIL` isn't on a domain Resend has verified. Finish F2 or fix the address. |

@@ -18,12 +18,14 @@ import {
   getLatestMessage,
   requeueFailedMessage,
   markProspectReplied,
+  listProspectsToEnrich,
 } from '@/lib/outbound/db'
 import { parseProspectsCsv } from '@/lib/outbound/csv'
 import { draftTouch1 } from '@/lib/outbound/copywriter'
 import { sendOutbound } from '@/lib/outbound/sender'
 import { addSuppression } from '@/lib/outbound/suppression'
 import { handoffToConcierge } from '@/lib/outbound/handoff'
+import { enrichProspect } from '@/lib/outbound/enrichment'
 
 export async function createCampaignAction(formData: FormData) {
   const name = String(formData.get('name') || '').trim()
@@ -41,6 +43,27 @@ export async function importCsvAction(formData: FormData) {
   if (parsed.rows.length > 0) {
     await importProspects(campaignId, parsed.rows)
   }
+  revalidatePath(`/admin/outbound/${campaignId}`)
+}
+
+// Each enrichment is a web-research call (~30-90s), so batches stay small and
+// run in parallel.
+const ENRICH_BATCH_SIZE = 5
+
+export async function enrichAction(formData: FormData) {
+  const prospectId = String(formData.get('prospect_id') || '')
+  const p = await getProspect(prospectId)
+  // Enrichment feeds Touch 1, so only before anything has been sent.
+  if (!p || p.current_touch > 0 || p.sequence_status !== 'active' || p.status === 'suppressed') return
+  await enrichProspect(p.id)
+  revalidatePath(`/admin/outbound/${p.campaign_id}`)
+}
+
+export async function enrichBatchAction(formData: FormData) {
+  const campaignId = String(formData.get('campaign_id') || '')
+  if (!campaignId) return
+  const batch = await listProspectsToEnrich(campaignId, ENRICH_BATCH_SIZE)
+  await Promise.allSettled(batch.map((p) => enrichProspect(p.id)))
   revalidatePath(`/admin/outbound/${campaignId}`)
 }
 

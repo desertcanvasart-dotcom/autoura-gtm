@@ -18,6 +18,8 @@ export interface CampaignRow {
   updated_at: string
 }
 
+export type EnrichmentStatus = 'enriched' | 'no_signal' | 'failed'
+
 export type SequenceStatus = 'active' | 'completed' | 'replied' | 'stopped' | 'bounced' | 'opted_out'
 
 export interface ProspectRow {
@@ -29,6 +31,11 @@ export interface ProspectRow {
   role_title: string | null
   destination: string | null
   signal: string | null
+  website: string | null
+  enrichment_status: EnrichmentStatus | null
+  /** EnrichmentRecord from lib/outbound/enrichment.ts (JSONB). */
+  enrichment: Record<string, unknown> | null
+  enriched_at: string | null
   status: ProspectStatus
   sequence_status: SequenceStatus
   current_touch: number
@@ -92,6 +99,7 @@ export interface ProspectInput {
   role_title?: string
   destination?: string
   signal?: string
+  website?: string
 }
 
 export interface ImportResult {
@@ -127,6 +135,7 @@ export async function importProspects(campaignId: string, rows: ProspectInput[])
       role_title: r.role_title ?? null,
       destination: r.destination ?? null,
       signal: r.signal ?? null,
+      website: r.website ?? null,
     })
     if (error) {
       // Unique-index violation = duplicate within campaign.
@@ -159,6 +168,40 @@ export async function getProspect(id: string): Promise<ProspectRow | null> {
 export async function setProspectStatus(id: string, status: ProspectStatus): Promise<void> {
   const supabase = getSupabaseAdmin()
   await supabase.from('outbound_prospects').update({ status }).eq('id', id)
+}
+
+// ---------------- Enrichment ----------------
+
+/** Save an enrichment outcome: fill the given empty fields + store the record. */
+export async function saveEnrichment(
+  prospectId: string,
+  fill: Record<string, unknown>,
+  status: EnrichmentStatus,
+  record: object
+): Promise<void> {
+  const supabase = getSupabaseAdmin()
+  const { error } = await supabase
+    .from('outbound_prospects')
+    .update({ ...fill, enrichment_status: status, enrichment: record, enriched_at: new Date().toISOString() })
+    .eq('id', prospectId)
+  if (error) throw new Error(`saveEnrichment failed: ${error.message}`)
+}
+
+/** Not-yet-enriched prospects still waiting for Touch 1, oldest first. */
+export async function listProspectsToEnrich(campaignId: string, limit: number): Promise<ProspectRow[]> {
+  const supabase = getSupabaseAdmin()
+  const { data, error } = await supabase
+    .from('outbound_prospects')
+    .select('*')
+    .eq('campaign_id', campaignId)
+    .is('enrichment_status', null)
+    .eq('current_touch', 0)
+    .eq('sequence_status', 'active')
+    .neq('status', 'suppressed')
+    .order('created_at', { ascending: true })
+    .limit(limit)
+  if (error) throw new Error(`listProspectsToEnrich failed: ${error.message}`)
+  return (data ?? []) as ProspectRow[]
 }
 
 // ---------------- Messages ----------------

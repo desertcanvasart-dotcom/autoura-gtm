@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getCampaign, listProspects, listMessagesByProspect, type ProspectRow, type MessageRow } from '@/lib/outbound/db'
-import { importCsvAction, draftAction, approveSendAction, suppressAction, markRepliedAction, stopSequenceAction, retryFailedAction } from '../actions'
+import { importCsvAction, draftAction, approveSendAction, suppressAction, markRepliedAction, stopSequenceAction, retryFailedAction, enrichAction, enrichBatchAction } from '../actions'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,6 +30,10 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
   const prospects = await listProspects(campaignId)
   const latestByProspect = await listMessagesByProspect(prospects.map((p) => p.id))
 
+  const toEnrich = prospects.filter(
+    (p) => !p.enrichment_status && p.current_touch === 0 && p.sequence_status === 'active' && p.status !== 'suppressed'
+  ).length
+
   const counts = prospects.reduce<Record<string, number>>((acc, p) => {
     acc[p.status] = (acc[p.status] || 0) + 1
     return acc
@@ -53,7 +57,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
       <section className="mt-6 rounded-lg border border-warm-200 bg-white p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-warm-500">Import prospects (CSV)</h2>
         <p className="mt-1 text-xs text-warm-500">
-          Header row required. Columns (aliases ok): <code>company, contact, email, role, destination, signal</code>. Only <code>email</code> is required. Suppressed + duplicate emails are skipped automatically.
+          Header row required. Columns (aliases ok): <code>company, contact, email, role, destination, signal, website</code>. Only <code>email</code> is required. Leave <code>signal</code> blank to have it researched (Enrich). Suppressed + duplicate emails are skipped automatically.
         </p>
         <form action={importCsvAction} className="mt-3">
           <input type="hidden" name="campaign_id" value={campaign.id} />
@@ -71,6 +75,19 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
         Sequence: up to {campaign.max_touches} touches, {campaign.touch_interval_days} days apart. Follow-ups
         (Touch 2/3) are auto-drafted when due and wait here for your approval.
       </p>
+
+      {/* Enrichment */}
+      {toEnrich > 0 && (
+        <form action={enrichBatchAction} className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-warm-200 bg-white px-4 py-3">
+          <input type="hidden" name="campaign_id" value={campaign.id} />
+          <span className="text-sm text-warm-600">
+            {toEnrich} prospect(s) not researched yet. Enrichment reads their public website and reviews to find a signal for Touch 1 (about a minute per batch).
+          </span>
+          <button className="rounded-lg border border-warm-300 px-3 py-1.5 text-sm text-warm-700 hover:bg-warm-50">
+            Enrich next {Math.min(5, toEnrich)}
+          </button>
+        </form>
+      )}
 
       {/* Prospects */}
       <section className="mt-4 space-y-4">
@@ -94,6 +111,52 @@ function SeqPill({ value }: { value: string }) {
   return <span className={`rounded px-2 py-0.5 text-xs ${color}`}>seq: {value}</span>
 }
 
+// Source URLs come from model output; only ever link http(s).
+function safeHref(url: string | null | undefined): string | null {
+  return url && /^https?:\/\//i.test(url) ? url : null
+}
+
+function EnrichmentSummary({ p }: { p: ProspectRow }) {
+  if (!p.enrichment_status) return null
+  const e = (p.enrichment || {}) as {
+    confidence?: string
+    notes?: string
+    error?: string
+    signal_source_url?: string | null
+    unverified_signal?: string | null
+    other_observations?: { text: string; source_url: string }[]
+  }
+  const label = {
+    enriched: 'bg-green-50 text-green-700',
+    no_signal: 'bg-warm-100 text-warm-600',
+    failed: 'bg-red-50 text-red-700',
+  }[p.enrichment_status]
+  return (
+    <details className="mt-1.5 text-xs text-warm-500">
+      <summary className="cursor-pointer">
+        <span className={`rounded px-1.5 py-0.5 ${label}`}>research: {p.enrichment_status.replace('_', ' ')}</span>
+        {e.confidence && p.enrichment_status !== 'failed' ? ` · ${e.confidence} confidence` : ''}
+      </summary>
+      <div className="mt-1 space-y-1 pl-2">
+        {safeHref(e.signal_source_url) && p.enrichment_status === 'enriched' && (
+          <div>source: <a href={safeHref(e.signal_source_url)!} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">{e.signal_source_url}</a></div>
+        )}
+        {(e.other_observations || []).map((o, i) => (
+          <div key={i}>
+            also: {o.text}{' '}
+            {safeHref(o.source_url) && (
+              <a href={safeHref(o.source_url)!} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">[source]</a>
+            )}
+          </div>
+        ))}
+        {e.unverified_signal && <div className="text-amber-700">not used (unverified or low confidence): {e.unverified_signal}</div>}
+        {e.notes && <div>notes: {e.notes}</div>}
+        {e.error && <div className="text-red-600">error: {e.error}</div>}
+      </div>
+    </details>
+  )
+}
+
 function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | null; maxTouches: number }) {
   const hasDraft = m && m.status === 'draft' && p.sequence_status === 'active'
   const canRetry = m && m.status === 'failed' && m.error !== 'suppressed' && p.sequence_status === 'active' && p.status !== 'suppressed'
@@ -101,6 +164,7 @@ function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | nu
   // Touch 1 can only be (re)drafted before anything has gone out.
   const canDraftTouch1 = p.current_touch === 0 && !isSent && p.status !== 'suppressed'
   const inSequence = p.current_touch >= 1 && ['active', 'completed'].includes(p.sequence_status)
+  const canEnrich = p.current_touch === 0 && p.sequence_status === 'active' && p.status !== 'suppressed'
   const dueText = p.next_touch_due_at ? `next touch due ${new Date(p.next_touch_due_at).toLocaleDateString()}` : ''
 
   return (
@@ -113,7 +177,9 @@ function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | nu
           <div className="text-xs text-warm-500">
             {p.contact_email}{p.role_title ? ` · ${p.role_title}` : ''}{p.destination ? ` · ${p.destination}` : ''}
           </div>
+          {p.website && <div className="mt-1 text-xs text-warm-500"><span className="text-warm-400">website:</span> {p.website}</div>}
           {p.signal && <div className="mt-1 text-xs text-warm-500"><span className="text-warm-400">signal:</span> {p.signal}</div>}
+          <EnrichmentSummary p={p} />
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <SeqPill value={p.sequence_status} />
             <span className="text-xs text-warm-500">touch {p.current_touch}/{maxTouches}{dueText ? ` · ${dueText}` : ''}</span>
@@ -132,6 +198,14 @@ function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | nu
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
+        {canEnrich && (
+          <form action={enrichAction}>
+            <input type="hidden" name="prospect_id" value={p.id} />
+            <button className="rounded-lg border border-warm-300 px-3 py-1.5 text-sm text-warm-700 hover:bg-warm-50">
+              {p.enrichment_status ? 'Re-enrich' : 'Enrich'}
+            </button>
+          </form>
+        )}
         {canDraftTouch1 && (
           <form action={draftAction}>
             <input type="hidden" name="prospect_id" value={p.id} />
