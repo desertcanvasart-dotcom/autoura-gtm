@@ -95,8 +95,10 @@ function SeqPill({ value }: { value: string }) {
 }
 
 function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | null; maxTouches: number }) {
-  const hasDraft = m && m.status === 'draft'
+  const hasDraft = m && m.status === 'draft' && p.sequence_status === 'active'
   const isSent = p.status === 'sent' || (m && (m.status === 'sent' || m.status === 'dry_run'))
+  // Touch 1 can only be (re)drafted before anything has gone out.
+  const canDraftTouch1 = p.current_touch === 0 && !isSent && p.status !== 'suppressed'
   const inSequence = p.current_touch >= 1 && ['active', 'completed'].includes(p.sequence_status)
   const dueText = p.next_touch_due_at ? `next touch due ${new Date(p.next_touch_due_at).toLocaleDateString()}` : ''
 
@@ -129,7 +131,7 @@ function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | nu
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
-        {!isSent && (
+        {canDraftTouch1 && (
           <form action={draftAction}>
             <input type="hidden" name="prospect_id" value={p.id} />
             <button className="rounded-lg border border-warm-300 px-3 py-1.5 text-sm text-warm-700 hover:bg-warm-50">

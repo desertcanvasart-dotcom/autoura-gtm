@@ -283,16 +283,52 @@ export async function setSequenceStatus(prospectId: string, status: SequenceStat
     .from('outbound_prospects')
     .update({ sequence_status: status, next_touch_due_at: null })
     .eq('id', prospectId)
+  // A stopped sequence must not leave an approvable follow-up behind.
+  if (status !== 'active') await cancelPendingDrafts([prospectId])
+}
+
+/** Cancel unsent drafts so they can no longer be approved. */
+export async function cancelPendingDrafts(prospectIds: string[]): Promise<void> {
+  if (prospectIds.length === 0) return
+  const supabase = getSupabaseAdmin()
+  await supabase
+    .from('outbound_messages')
+    .update({ status: 'canceled' })
+    .in('prospect_id', prospectIds)
+    .eq('status', 'draft')
+}
+
+/** Escape LIKE wildcards so a value matches literally (`_` is common in emails). */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`)
 }
 
 /** Stop every active sequence for an email (used on bounce/complaint webhooks). */
 export async function stopSequencesByEmail(email: string, status: SequenceStatus): Promise<void> {
   const supabase = getSupabaseAdmin()
-  await supabase
+  // Case-insensitive exact match: contact_email is stored trimmed, not lowercased.
+  const { data } = await supabase
     .from('outbound_prospects')
     .update({ sequence_status: status, next_touch_due_at: null })
-    .ilike('contact_email', email.trim())
+    .ilike('contact_email', escapeLikePattern(normalizeEmail(email)))
     .eq('sequence_status', 'active')
+    .select('id')
+  await cancelPendingDrafts(((data ?? []) as { id: string }[]).map((r) => r.id))
+}
+
+/**
+ * Atomically move a draft to 'approved'. Returns false if it was no longer a
+ * draft (already sent, canceled, or claimed by a concurrent click).
+ */
+export async function claimDraftForSend(id: string): Promise<boolean> {
+  const supabase = getSupabaseAdmin()
+  const { data } = await supabase
+    .from('outbound_messages')
+    .update({ status: 'approved', approved_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'draft')
+    .select('id')
+  return (data ?? []).length > 0
 }
 
 export async function getMessage(id: string): Promise<MessageRow | null> {

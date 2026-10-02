@@ -13,6 +13,8 @@ import {
   setProspectStatus,
   advanceSequenceAfterSend,
   setSequenceStatus,
+  claimDraftForSend,
+  cancelPendingDrafts,
 } from '@/lib/outbound/db'
 import { parseProspectsCsv } from '@/lib/outbound/csv'
 import { draftTouch1 } from '@/lib/outbound/copywriter'
@@ -43,6 +45,8 @@ export async function draftAction(formData: FormData) {
   const prospectId = String(formData.get('prospect_id') || '')
   const p = await getProspect(prospectId)
   if (!p) return
+  // Touch 1 is only for prospects never contacted; follow-ups come from the sequencer.
+  if (p.current_touch >= 1 || p.status === 'suppressed') return
   try {
     const draft = await draftTouch1(p)
     await upsertDraft(p, draft.subject, draft.body)
@@ -55,10 +59,19 @@ export async function draftAction(formData: FormData) {
 export async function approveSendAction(formData: FormData) {
   const messageId = String(formData.get('message_id') || '')
   const m = await getMessage(messageId)
-  if (!m) return
+  if (!m || m.status !== 'draft') return
   const p = await getProspect(m.prospect_id)
   const c = p ? await getCampaign(p.campaign_id) : null
   if (!p || !c) return
+
+  // A replied/stopped/bounced/opted-out sequence never sends another touch.
+  if (p.sequence_status !== 'active') {
+    await cancelPendingDrafts([p.id])
+    revalidatePath(`/admin/outbound/${p.campaign_id}`)
+    return
+  }
+  // Claim the draft atomically so a double-click or second tab can't send twice.
+  if (!(await claimDraftForSend(m.id))) return
 
   const outcome = await sendOutbound(m, p, c)
   if (outcome.status === 'suppressed') {

@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import { buildOutboundSystemPrompt, buildFollowupSystemPrompt } from '@/lib/ai/outbound-prompt'
 import { parseProspectsCsv } from '@/lib/outbound/csv'
+import { escapeLikePattern } from '@/lib/outbound/db'
 
 const ALLOWED_DOLLARS = new Set([69, 189, 449, 1200])
 function extractDollars(text: string): number[] {
@@ -97,5 +98,17 @@ describe('CSV parsing', () => {
     const { rows } = parseProspectsCsv(csv)
     expect(rows).toHaveLength(1)
     expect(rows[0].contact_email).toBe('a@b.example')
+  })
+})
+
+describe('escapeLikePattern — webhook email matching is literal', () => {
+  it('escapes LIKE wildcards so john_doe cannot match johnXdoe', () => {
+    expect(escapeLikePattern('john_doe@op.example')).toBe('john\\_doe@op.example')
+    expect(escapeLikePattern('a%b@op.example')).toBe('a\\%b@op.example')
+    expect(escapeLikePattern('a\\b@op.example')).toBe('a\\\\b@op.example')
+  })
+
+  it('leaves ordinary addresses unchanged', () => {
+    expect(escapeLikePattern('mona@nilestar.example')).toBe('mona@nilestar.example')
   })
 })
