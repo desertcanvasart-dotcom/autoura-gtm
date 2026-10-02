@@ -20,7 +20,7 @@ Standalone GTM service for **selling Autoura (the product) to travel agencies, t
 - **Multi-touch sequencing** — after Touch 1, Touch 2 (proof) and Touch 3 (permission-to-close) are auto-drafted when due into the same approval queue. A daily GitHub Action ([`.github/workflows/outbound-followups.yml`](.github/workflows/outbound-followups.yml)) calls `/api/cron/outbound-followups` (Bearer `CRON_SECRET`); `OUTBOUND_INTERNAL_CRON=true` is an in-app alternative.
 - **Stop conditions** — "Replied → hand to concierge" (creates a `gtm-outbound` lead in `/admin`), manual stop, opt-out, and bounce/complaint via the signed Resend webhook at `/api/outbound/resend-webhook`. Stopping a sequence cancels any pending draft; failed sends can be retried (back to the approval queue).
 
-**Not built yet** (later phases): automatic reply detection (replies are marked by hand today), escalation alerts by email/Slack, automated prospect enrichment, LinkedIn tooling, WhatsApp inbound.
+**Not built yet** (later phases): automatic reply detection (replies are marked by hand today), escalation alerts to Slack, automated prospect enrichment, LinkedIn tooling, WhatsApp inbound.
 
 ## Setup
 
@@ -64,7 +64,7 @@ The launcher renders nothing until that var is set (so it can't ship a broken fr
 - QuickBooks/Xero are **always** "in beta, push-only" — never "integrated."
 - Never quote outside the four published tiers; never discount.
 - No launch dates, custom features, custom prices, or SLAs.
-- Enterprise / high-volume / multi-country leads **escalate** (they don't auto-book). A deterministic backstop in [`lib/qualification.ts`](lib/qualification.ts) catches these even if the model misses them.
+- Enterprise / high-volume / multi-country leads **escalate** (they don't auto-book). A deterministic backstop in [`lib/qualification.ts`](lib/qualification.ts) catches these even if the model misses them. The first escalation of each lead emails `GTM_ESCALATION_EMAIL` with the lead details, recent transcript and an admin link ([`lib/notifications/escalation-alert.ts`](lib/notifications/escalation-alert.ts)).
 - Qualified conversations end by surfacing https://calendly.com/autoura.
 
 Review transcripts weekly at `/admin` for claims drift (the zero-tolerance metric).
@@ -83,6 +83,7 @@ lib/ai/anthropic-client.ts     → Anthropic client + retry (mirrors main app)
 lib/ai/system-prompt.ts        → spec §4 prompt, composed from the truth file
 lib/ai/concierge-agent.ts      → tool-calling loop (update_lead / offer_demo / escalate_lead)
 lib/qualification.ts           → deterministic escalation backstop
+lib/notifications/*            → escalation alert email (Resend)
 lib/supabase/*                 → service-role client + persistence + admin reads
 app/api/chat/route.ts          → POST one turn
 app/widget/                    → iframe-embeddable chat page
