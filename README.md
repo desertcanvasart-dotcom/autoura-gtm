@@ -32,8 +32,6 @@ Prospects can message Autoura's WhatsApp Business number and talk to the **same 
 
 - **LinkedIn (assisted)** — **Draft LinkedIn note** has Claude write a short connection-request note (same voice and claim rules, within LinkedIn's character limit, no links or prices). A person copies it, sends it on LinkedIn themselves, and clicks **Mark sent on LinkedIn** ([`lib/outbound/linkedin.ts`](lib/outbound/linkedin.ts)). Nothing is automated on LinkedIn: it has no API for this and its User Agreement forbids automating it. Add profile URLs with a `linkedin` CSV column.
 
-**Not built yet** (later phases): escalation alerts to Slack.
-
 ## Setup
 
 1. `npm install`
