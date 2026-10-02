@@ -22,9 +22,12 @@ export interface GtmMessageRow {
   created_at: string
 }
 
+export type ConversationChannel = 'web' | 'whatsapp'
+
 export interface LeadUpdate {
   contact_name?: string
   contact_email?: string
+  contact_phone?: string
   company_name?: string
   role_title?: string
   current_system?: string
@@ -46,6 +49,12 @@ export async function createConversation(input: {
   pageUrl?: string | null
   userAgent?: string | null
   metadata?: Record<string, unknown>
+  /** Set only for non-web channels (requires migration 006). */
+  channel?: ConversationChannel
+  /** WhatsApp: sender's number, digits only. */
+  externalId?: string
+  /** Persist the widget's opening greeting (default true). WhatsApp users never see it. */
+  greeting?: boolean
 }): Promise<string> {
   const supabase = getSupabaseAdmin()
   const source = input.source ?? 'gtm-inbound'
@@ -57,6 +66,7 @@ export async function createConversation(input: {
       page_url: input.pageUrl ?? null,
       user_agent: input.userAgent ?? null,
       metadata: input.metadata ?? {},
+      ...(input.channel ? { channel: input.channel, external_id: input.externalId ?? null } : {}),
     })
     .select('id')
     .single()
@@ -72,7 +82,9 @@ export async function createConversation(input: {
   // Persist the opening greeting as the first assistant turn, so the model has
   // the context of what it already asked (otherwise it treats the user's first
   // reply as context-free) and the admin transcript is complete.
-  await appendMessage({ conversationId: data.id as string, role: 'assistant', content: CONCIERGE_GREETING })
+  if (input.greeting !== false) {
+    await appendMessage({ conversationId: data.id as string, role: 'assistant', content: CONCIERGE_GREETING })
+  }
 
   return data.id as string
 }
@@ -99,20 +111,66 @@ export async function setConversationStatus(
 // Messages
 // ----------------------------------------------------------------------------
 
+/**
+ * Append a message. With `externalId` (a provider message id), a repeat of the
+ * same id is ignored and returns false — webhook retries are processed once.
+ */
 export async function appendMessage(input: {
   conversationId: string
   role: 'user' | 'assistant' | 'tool'
   content: string
   toolCalls?: unknown
-}): Promise<void> {
+  externalId?: string
+}): Promise<boolean> {
   const supabase = getSupabaseAdmin()
   const { error } = await supabase.from('gtm_messages').insert({
     conversation_id: input.conversationId,
     role: input.role,
     content: input.content,
     tool_calls: input.toolCalls ?? null,
+    ...(input.externalId ? { external_id: input.externalId } : {}),
   })
+  if (error?.code === '23505' && input.externalId) return false // already have this message
   if (error) throw new Error(`appendMessage failed: ${error.message}`)
+  return true
+}
+
+/**
+ * The sender's current WhatsApp conversation, or null if they have none or
+ * it's been idle longer than `maxIdleDays` (then a fresh one is started).
+ */
+export async function findWhatsAppConversation(phone: string, maxIdleDays: number): Promise<string | null> {
+  const supabase = getSupabaseAdmin()
+  const { data: convo } = await supabase
+    .from('gtm_conversations')
+    .select('id')
+    .eq('channel', 'whatsapp')
+    .eq('external_id', phone)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!convo) return null
+  const { data: last } = await supabase
+    .from('gtm_messages')
+    .select('created_at')
+    .eq('conversation_id', convo.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const lastAt = last ? Date.parse(last.created_at as string) : 0
+  return Date.now() - lastAt <= maxIdleDays * 86400_000 ? (convo.id as string) : null
+}
+
+/** How many user messages a conversation received since `sinceIso` (abuse cap). */
+export async function countUserMessagesSince(conversationId: string, sinceIso: string): Promise<number> {
+  const supabase = getSupabaseAdmin()
+  const { count } = await supabase
+    .from('gtm_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('conversation_id', conversationId)
+    .eq('role', 'user')
+    .gte('created_at', sinceIso)
+  return count ?? 0
 }
 
 export async function getMessages(conversationId: string): Promise<GtmMessageRow[]> {

@@ -35,7 +35,7 @@ export default async function ConversationDetailPage({
         {lead?.company_name || lead?.contact_name || 'Conversation'}
       </h1>
       <p className="mt-1 text-sm text-slate-500">
-        {conversation.source} · {conversation.status} · started{' '}
+        {conversation.source}{conversation.channel === 'whatsapp' ? ' · WhatsApp' : ''} · {conversation.status} · started{' '}
         {new Date(conversation.created_at).toLocaleString()}
         {conversation.page_url ? ` · from ${conversation.page_url}` : ''}
       </p>

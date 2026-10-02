@@ -18,7 +18,7 @@ Hand this to whoever is deploying. It takes the **autoura-growth** GTM concierge
 
 1. Create a **new** Supabase project (name it e.g. `autoura-growth`). This must be **separate** from the main autoura-saas project — do not reuse it.
 2. Open **SQL Editor** → New query.
-3. Paste the entire contents of [`supabase/migrations/001_gtm_tables.sql`](supabase/migrations/001_gtm_tables.sql) and **Run**. It creates `gtm_conversations`, `gtm_messages`, `gtm_leads` and is safe to re-run.
+3. Paste the entire contents of [`supabase/migrations/001_gtm_tables.sql`](supabase/migrations/001_gtm_tables.sql) and **Run**. It creates `gtm_conversations`, `gtm_messages`, `gtm_leads` and is safe to re-run. Then run [`supabase/migrations/006_whatsapp_inbound.sql`](supabase/migrations/006_whatsapp_inbound.sql) the same way. **`/admin` needs it even if you never use WhatsApp** (it adds the conversation `channel` column).
 4. Collect three values from **Project Settings → API**:
    - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
    - **anon public** key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -228,6 +228,58 @@ Limits:
 
 ---
 
+## Part G — WhatsApp inbound (optional)
+
+Lets prospects message your WhatsApp Business number and get the concierge. **Inbound only**: the app answers people who message first and never starts a WhatsApp conversation.
+
+Use a **dedicated number for sales**, not the one autoura-saas uses for your travellers. One number can only point its webhook at one app.
+
+### G1 — Database
+Make sure [`006_whatsapp_inbound.sql`](supabase/migrations/006_whatsapp_inbound.sql) has been run (Part A step 3).
+
+### G2 — Pick a provider and set the variables (Railway → growth service → Variables)
+
+Common:
+
+| Variable | Value |
+|---|---|
+| `WHATSAPP_PROVIDER` | `meta` or `twilio`. Unset turns WhatsApp off. |
+| `GTM_PUBLIC_BASE_URL` | This app's public URL, no trailing slash, e.g. `https://autoura-growth-production.up.railway.app`. **Required for Twilio** (its signature is over the public URL). |
+| `WHATSAPP_MAX_MESSAGES_PER_DAY` | Optional. AI replies per phone number per 24h (default `40`). After that it says once that it's hit its limit, then stays quiet until the window rolls over. |
+
+**Meta (WhatsApp Cloud API):** same names as autoura-saas.
+
+| Variable | Where to get it |
+|---|---|
+| `META_WHATSAPP_ACCESS_TOKEN` | Meta Business → System user token with `whatsapp_business_messaging` (secret) |
+| `META_WHATSAPP_PHONE_NUMBER_ID` | WhatsApp Manager → the number's **Phone number ID** (not the number itself) |
+| `META_WHATSAPP_APP_SECRET` | Meta app → Settings → Basic → **App secret** (secret; validates webhooks) |
+| `META_WHATSAPP_WEBHOOK_VERIFY_TOKEN` | A random string you invent (used once, in G3) |
+| `META_GRAPH_API_VERSION` | Optional, default `v21.0` (same as autoura-saas) |
+
+**Twilio:** same names as autoura-saas.
+
+| Variable | Where to get it |
+|---|---|
+| `TWILIO_ACCOUNT_SID` | Twilio Console |
+| `TWILIO_AUTH_TOKEN` | Twilio Console (secret; validates webhooks, and sends if no API key) |
+| `TWILIO_WHATSAPP_FROM` | Your WhatsApp sender, e.g. `whatsapp:+14155238886` |
+| `TWILIO_API_KEY` / `TWILIO_API_SECRET` | Optional; if set, used for sending instead of the auth token |
+
+### G3 — Point the webhook at this app
+Webhook URL: `https://<your-railway-domain>/api/whatsapp/webhook`
+
+- **Meta:** Meta app → WhatsApp → Configuration → Webhook → **Edit**: paste the URL and your `META_WHATSAPP_WEBHOOK_VERIFY_TOKEN`, click **Verify and save**, then subscribe to the **`messages`** field.
+- **Twilio:** your WhatsApp sender's settings → "A message comes in" → the URL above, method **POST**. The URL must match `GTM_PUBLIC_BASE_URL` exactly.
+
+### G4 — Test
+- [ ] From a personal phone, WhatsApp the number: *"Hi, we run about 20 quotes a week on WhatsApp. How does pricing work?"* A reply arrives within a few seconds and quotes only the four published tiers.
+- [ ] `/admin` shows the conversation marked **WhatsApp**, and the lead has your phone number.
+- [ ] Send a photo: you're asked to type your question.
+- [ ] Send *"We need an SLA and custom pricing for 6 countries"*: the lead is escalated and the escalation email (if set up) includes the phone number.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause & fix |
@@ -243,6 +295,9 @@ Limits:
 | `/admin/outbound` says "Couldn't load … migration 002" | Migrations 002/003 weren't applied to this Supabase project. See F1. |
 | LinkedIn shows `draft failed: … unusable after retry` | Claude twice wrote a note that broke a rule (too long, a link, a price or a placeholder). Click **Draft LinkedIn note** again, or write the note yourself on LinkedIn. If it's always "too long", check `LINKEDIN_NOTE_MAX_CHARS` isn't set very low. |
 | A prospect's LinkedIn link is missing after import | Only `linkedin.com/in/…` and `linkedin.com/company/…` URLs are kept. Anything else in the `linkedin` column is dropped. |
+| WhatsApp message gets no reply | Check Railway logs. `401 bad signature`: wrong `META_WHATSAPP_APP_SECRET` / `TWILIO_AUTH_TOKEN`, or (Twilio) `GTM_PUBLIC_BASE_URL` doesn't exactly match the webhook URL. `503 not configured`: `WHATSAPP_PROVIDER` or the provider's secret isn't set. `[whatsapp] failed handling …`: usually a send error. Meta: check the access token and phone number ID. Twilio: check `TWILIO_WHATSAPP_FROM`. No log line at all: the webhook isn't pointed at this app (G3). |
+| Meta "Verify and save" fails | `WHATSAPP_PROVIDER` must be `meta` and `META_WHATSAPP_WEBHOOK_VERIFY_TOKEN` must exactly match what you typed in Meta, before you click Verify. |
+| `/admin` errors with `column gtm_conversations.channel does not exist` | Run migration `006_whatsapp_inbound.sql` (Part A step 3). |
 | Enrich shows `research: failed` | Open the research details on the card for the error. Railway logs show `[enrichment] prospect … failed`. A `400` mentioning `web_search` or `web_fetch` means the Anthropic organization has web search/fetch turned off (enable it in the Claude Console's privacy/feature settings) or `GTM_AGENT_MODEL` is set to an older model that doesn't support these tools. |
 | Enrich shows `research: no signal` | Nothing specific and verifiable was found, or the company couldn't be identified for sure. The notes say which. Add the company's `website` and **Re-enrich**, or write the signal yourself. |
 | Draft button does nothing / prospect turns `failed` | Drafting calls Claude. Check Railway logs for the Anthropic error, same causes as the chat 404 above. |

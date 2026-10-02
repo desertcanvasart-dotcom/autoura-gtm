@@ -86,7 +86,12 @@ export default async function AdminPage() {
                       {r.lead?.contact_email || (r.lead?.contact_name && r.lead?.company_name ? r.lead.contact_name : '')}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{r.source}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {r.source}
+                    {r.channel === 'whatsapp' && (
+                      <span className="ml-1.5 rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-800">WhatsApp</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <StatusBadge value={r.status} />
                   </td>

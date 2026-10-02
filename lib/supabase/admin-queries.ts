@@ -13,6 +13,7 @@ export interface AdminLeadRow {
   contact_name: string | null
   company_name: string | null
   contact_email: string | null
+  contact_phone: string | null
   role_title: string | null
   current_system: string | null
   destinations: string | null
@@ -33,6 +34,8 @@ export interface AdminConversationSummary {
   id: string
   status: string
   source: string
+  /** 'web' | 'whatsapp' (migration 006). */
+  channel: string
   page_url: string | null
   created_at: string
   updated_at: string
@@ -45,7 +48,7 @@ export async function listConversations(limit = 100): Promise<AdminConversationS
 
   const { data: convos, error } = await supabase
     .from('gtm_conversations')
-    .select('id, status, source, page_url, created_at, updated_at')
+    .select('id, status, source, channel, page_url, created_at, updated_at')
     .order('created_at', { ascending: false })
     .limit(limit)
   if (error) throw new Error(`listConversations failed: ${error.message}`)
@@ -72,6 +75,7 @@ export async function listConversations(limit = 100): Promise<AdminConversationS
     id: c.id,
     status: c.status,
     source: c.source,
+    channel: c.channel ?? 'web',
     page_url: c.page_url,
     created_at: c.created_at,
     updated_at: c.updated_at,
@@ -88,7 +92,7 @@ export async function getConversationDetail(conversationId: string): Promise<{
 
   const { data: convo } = await supabase
     .from('gtm_conversations')
-    .select('id, status, source, page_url, created_at, updated_at')
+    .select('id, status, source, channel, page_url, created_at, updated_at')
     .eq('id', conversationId)
     .maybeSingle()
 
@@ -111,6 +115,7 @@ export async function getConversationDetail(conversationId: string): Promise<{
       id: convo.id,
       status: convo.status,
       source: convo.source,
+      channel: convo.channel ?? 'web',
       page_url: convo.page_url,
       created_at: convo.created_at,
       updated_at: convo.updated_at,
