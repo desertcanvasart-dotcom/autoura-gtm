@@ -7,6 +7,7 @@
 
 import { getSupabaseAdmin } from './admin'
 import { CONCIERGE_GREETING } from '@/lib/greeting'
+import { sendEscalationAlert } from '@/lib/notifications/escalation-alert'
 
 export type LeadSource = 'gtm-inbound' | 'gtm-outbound'
 export type Qualification = 'unqualified' | 'qualifying' | 'qualified' | 'not_icp'
@@ -150,9 +151,23 @@ export async function markDemoSurfaced(conversationId: string): Promise<void> {
 
 export async function escalateLead(conversationId: string, reason: string): Promise<void> {
   const supabase = getSupabaseAdmin()
-  await supabase
+  // Flip escalated false -> true atomically; only the call that wins sends the
+  // alert, so repeat escalations on later turns don't re-email the team.
+  const { data: firstTime } = await supabase
     .from('gtm_leads')
     .update({ escalated: true, escalation_reason: reason })
     .eq('conversation_id', conversationId)
+    .eq('escalated', false)
+    .select('*')
+  if (!firstTime || firstTime.length === 0) {
+    await supabase.from('gtm_leads').update({ escalation_reason: reason }).eq('conversation_id', conversationId)
+  }
   await setConversationStatus(conversationId, 'escalated')
+
+  if (firstTime && firstTime.length > 0) {
+    const transcript = (await getMessages(conversationId).catch(() => []))
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+    await sendEscalationAlert({ conversationId, reason, lead: firstTime[0], transcript })
+  }
 }

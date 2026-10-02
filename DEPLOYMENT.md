@@ -44,7 +44,10 @@ Verify: **Table Editor** should now list the three `gtm_` tables.
    | `SUPABASE_SERVICE_ROLE_KEY` | Part A4 (secret) |
    | `GTM_ALLOWED_FRAME_ANCESTORS` | `'self' https://getautoura.net https://www.getautoura.net` (include the single quotes around self, space-separated) |
    | `ADMIN_ACCESS_TOKEN` | A long random string YOU generate — see below. This is the password for the `/admin` page. |
-   | `GTM_ESCALATION_EMAIL` | Where enterprise leads should be flagged, e.g. `hello@getautoura.net` |
+   | `GTM_ESCALATION_EMAIL` | Who gets emailed when a lead is escalated, e.g. `hello@getautoura.net`. Comma-separate several. |
+   | `RESEND_API_KEY` | Needed for escalation alert emails. See **Part F2** for creating the key and verifying a sending domain. Without it, escalations are still flagged in `/admin`; no email goes out. |
+   | `GTM_ALERT_FROM_EMAIL` | Sender for alerts, on a Resend-verified domain, e.g. `Autoura Alerts <alerts@outreach.getautoura.net>`. Falls back to `OUTBOUND_FROM_EMAIL`. |
+   | `GTM_PUBLIC_BASE_URL` | This app's public URL, no trailing slash, for the transcript link in alerts. Falls back to `OUTBOUND_PUBLIC_BASE_URL`. |
    | `NEXT_PUBLIC_CALENDLY_URL` | `https://calendly.com/autoura` |
 
    Generate a strong admin token (run locally, paste the output as `ADMIN_ACCESS_TOKEN`):
@@ -88,6 +91,7 @@ The marketing site is served by the **autoura-saas** repo, which is already live
 - [ ] The chat bubble is visible on https://getautoura.net and https://www.getautoura.net.
 - [ ] Admin: open `https://<railway-domain>/admin`, log in (username: anything, password: your `ADMIN_ACCESS_TOKEN`). Your test conversations + the leads they generated appear.
 - [ ] A lead row shows `source = gtm-inbound`.
+- [ ] Escalation alert: in a **new** chat, say *"We need an SLA and custom pricing for a rollout across 6 countries."* The lead shows `escalated` in `/admin`, and `GTM_ESCALATION_EMAIL` receives one *"[Autoura] Escalated lead"* email. More escalating messages in the same chat don't send another email.
 
 ---
 
@@ -209,6 +213,7 @@ Use addresses you control (e.g. `you+test1@gmail.com`). Start from [`docs/outbou
 | No bubble on getautoura.net at all | `NEXT_PUBLIC_GROWTH_WIDGET_URL` not set on **autoura-saas**, or autoura-saas wasn't redeployed after setting it. See Part C. |
 | `/admin` returns 401 | Wrong password. Use the exact `ADMIN_ACCESS_TOKEN` value; leave username blank or type anything. |
 | `/admin` returns 503 | `ADMIN_ACCESS_TOKEN` isn't set on the growth service. Add it (Part B2) and redeploy. |
+| Lead shows `escalated` but no alert email arrives | Railway logs show `[escalation-alert] not sent …` (a variable is missing: `GTM_ESCALATION_EMAIL`, `RESEND_API_KEY`, or a sender) or `[escalation-alert] Resend 4xx …` (usually the sender isn't on a verified domain). Each lead alerts only once, so test with a new chat. Also check spam. |
 | `/admin/outbound` says "Couldn't load … migration 002" | Migrations 002/003 weren't applied to this Supabase project. See F1. |
 | Draft button does nothing / prospect turns `failed` | Drafting calls Claude. Check Railway logs for the Anthropic error, same causes as the chat 404 above. |
 | Approve shows `error: RESEND_API_KEY not configured` | `OUTBOUND_DRY_RUN=false` but no `RESEND_API_KEY`. Set it (F3), or go back to dry-run. |
