@@ -44,6 +44,7 @@ const HEADER_ALIASES: Record<keyof ProspectInput, string[]> = {
   role_title: ['role_title', 'role', 'title', 'position'],
   destination: ['destination', 'destinations', 'country', 'location', 'market'],
   signal: ['signal', 'observation', 'note', 'notes', 'reason', 'trigger'],
+  website: ['website', 'url', 'site', 'web', 'domain', 'homepage'],
 }
 
 function matchField(header: string): keyof ProspectInput | null {
