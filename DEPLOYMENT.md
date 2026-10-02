@@ -107,7 +107,7 @@ The marketing site is served by the **autoura-saas** repo, which is already live
 
 Outbound lets you import a list of operators, have Claude draft a personalized first email for each, and send it through Resend **only after a person clicks Approve**. Follow-ups (Touch 2 and 3) are drafted automatically when due and land in the same approval queue. Nothing is ever sent without a click.
 
-Do Parts A–E first. Then work through F1–F7 in order. **Leave `OUTBOUND_DRY_RUN=true` until F6 passes.**
+Do Parts A–E first. Then work through F1–F7 in order. **Leave `OUTBOUND_DRY_RUN=true` until F6 passes.** F8 (automatic reply detection) is optional and can be done any time after F4.
 
 ### F1 — Apply the outbound migrations
 
@@ -152,12 +152,12 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 
 A campaign can override the sender. If you fill in "from email" when you create the campaign, it's used instead of `OUTBOUND_FROM_EMAIL`.
 
-### F4 — Connect the Resend webhook (bounces & complaints)
+### F4 — Connect the Resend webhook (bounces, complaints & replies)
 
 This automatically suppresses addresses that hard-bounce or mark you as spam, and stops their sequences.
 
 1. Resend → **Webhooks → Add endpoint** → URL `https://<your-railway-domain>/api/outbound/resend-webhook`.
-2. Events: **`email.bounced`** and **`email.complained`**.
+2. Events: **`email.bounced`** and **`email.complained`**. Also tick **`email.received`** if you'll set up reply detection (F8).
 3. Copy the endpoint's signing secret (`whsec_...`) into `RESEND_WEBHOOK_SECRET` on Railway, and let it redeploy.
 4. Check delivery in the endpoint's log in Resend (use a test event if Resend offers one; otherwise check after the first real bounce). It should show `200`. A `401` means the secret is wrong, or the event is more than 5 minutes old — older events are rejected to block replays. A `503` means `RESEND_WEBHOOK_SECRET` isn't set yet.
 
@@ -197,8 +197,28 @@ Use addresses you control (e.g. `you+test1@gmail.com`). Start from [`docs/outbou
 3. Start real campaigns small, a few dozen sends per day, and grow gradually while the new subdomain builds a sending reputation.
 
 **Day-to-day:**
-- Check `OUTBOUND_REPLY_TO` daily. When a prospect replies, click **Replied → hand to concierge** on their card, which stops their sequence. Replies are not detected automatically yet.
+- Check `OUTBOUND_REPLY_TO` daily and answer replies from there. With F8 set up, a reply automatically stops that prospect's sequence and creates a `gtm-outbound` lead in `/admin`. Without F8, or if they replied from a different address, click **Replied → hand to concierge** on their card. Either way, a lead is only created once.
+- A reply like *"not interested"* or *"remove me"* also ends up as a lead. If they asked to be removed, click **Suppress** on their card so no future campaign emails them.
 - If a send fails, the card shows the error and a **Retry touch N** button. If the error looks like a network timeout, check Resend's **Emails** log first, because the email may already have gone out.
+
+### F8 — Automatic reply detection (optional)
+
+Without this, someone has to click **Replied → hand to concierge** for each reply, and a prospect who replied can still be sent the next follow-up if nobody clicks in time. With it, a reply stops the sequence on its own.
+
+How it works: replies keep arriving in your `OUTBOUND_REPLY_TO` inbox exactly as before. That inbox also **forwards a copy** to a Resend receiving address. Resend tells this app (`email.received`), and the app matches the sender to a prospect you've emailed. Emails prospects see don't change.
+
+1. **Get a receiving address.** Resend → **Emails → Receiving** shows an address like `anything@<your-id>.resend.app`. That works with no DNS changes. You can use a custom subdomain instead (add the MX record Resend gives you on e.g. `inbound.getautoura.net`), but **never on `getautoura.net` itself**, or it will take over your normal mail.
+2. **Webhook:** on the F4 endpoint, make sure **`email.received`** is ticked.
+3. **Forward replies from the `OUTBOUND_REPLY_TO` mailbox** to that address, **keeping the original sender**:
+   - **Gmail / Google Workspace:** Settings → **Forwarding and POP/IMAP → Add a forwarding address**. Google sends a confirmation code to it; read it in Resend → **Emails → Receiving**. Then create a **filter** (e.g. `subject:(Re:)`) with **Forward it to** that address, so only replies are forwarded rather than all your mail.
+   - **Outlook / Microsoft 365:** an inbox rule using **Redirect to**, not "Forward to". "Forward" replaces the sender with your own address, so nothing would match.
+4. **Test** (dry-run is fine): reply from an address that is a prospect you've already sent to. Within a minute the card shows `replied`, a `gtm-outbound` lead appears in `/admin`, and Railway logs show `[reply-detection] handed_off`.
+
+What it ignores: out-of-office and other automatic replies (in English, French, Spanish, German, Italian and Arabic), bounce notices, and senders that aren't a prospect you've emailed. An out-of-office reply leaves the sequence running.
+
+Limits:
+- It matches on the sender's address. If someone else at the company replies, use the button.
+- Forwarded replies are stored in your Resend account.
 
 ---
 
@@ -223,6 +243,7 @@ Use addresses you control (e.g. `you+test1@gmail.com`). Start from [`docs/outbou
 | GitHub Action fails with `401` | The repo secret `CRON_SECRET` doesn't match Railway's, or isn't set (F5). |
 | GitHub Action fails to connect / `404` | The URL in `outbound-followups.yml` doesn't match your Railway domain (F5). |
 | Follow-ups never get drafted | No scheduler is running (F5), or the prospect's sequence isn't `active` (replied/stopped/opted out). Railway logs show `[sequencer] failed …` for drafting errors. |
+| A reply didn't stop the sequence | Check Railway logs for `[reply-detection]`. **No line at all:** the forward isn't reaching Resend (check Resend → Emails → Receiving) or `email.received` isn't ticked on the webhook (F8). **`no_match`:** the sender doesn't match a prospect's email, or the forward replaced the sender with your own address (use Outlook's *Redirect*, F8). **`auto_reply`:** it looked like an out-of-office. In any of these cases, click **Replied → hand to concierge**. |
 | Resend webhook deliveries return `401` | `RESEND_WEBHOOK_SECRET` doesn't match the endpoint's signing secret, or the event is older than 5 minutes (e.g. a delayed retry). |
 
 ---

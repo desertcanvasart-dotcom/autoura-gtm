@@ -18,9 +18,9 @@ Standalone GTM service for **selling Autoura (the product) to travel agencies, t
 - **Human-approved sending** — every email waits for a person to click Approve; it then sends via Resend ([`lib/outbound/sender.ts`](lib/outbound/sender.ts)) with a signed unsubscribe link, `List-Unsubscribe` headers, and your postal address. `OUTBOUND_DRY_RUN=true` runs the whole flow without sending.
 - **Suppression list** — opt-outs, bounces, complaints and manual suppressions are checked before every send.
 - **Multi-touch sequencing** — after Touch 1, Touch 2 (proof) and Touch 3 (permission-to-close) are auto-drafted when due into the same approval queue. A daily GitHub Action ([`.github/workflows/outbound-followups.yml`](.github/workflows/outbound-followups.yml)) calls `/api/cron/outbound-followups` (Bearer `CRON_SECRET`); `OUTBOUND_INTERNAL_CRON=true` is an in-app alternative.
-- **Stop conditions** — "Replied → hand to concierge" (creates a `gtm-outbound` lead in `/admin`), manual stop, opt-out, and bounce/complaint via the signed Resend webhook at `/api/outbound/resend-webhook`. Stopping a sequence cancels any pending draft; failed sends can be retried (back to the approval queue).
+- **Stop conditions** — a prospect's reply, detected automatically (their reply inbox forwards a copy to Resend, which posts `email.received` to the webhook; out-of-office and bounce notices are ignored — [`lib/outbound/replies.ts`](lib/outbound/replies.ts)) or marked with "Replied → hand to concierge"; either creates one `gtm-outbound` lead in `/admin`. Also manual stop, opt-out, and bounce/complaint via the signed Resend webhook at `/api/outbound/resend-webhook`. Stopping a sequence cancels any pending draft; failed sends can be retried (back to the approval queue).
 
-**Not built yet** (later phases): automatic reply detection (replies are marked by hand today), escalation alerts to Slack, automated prospect enrichment, LinkedIn tooling, WhatsApp inbound.
+**Not built yet** (later phases): escalation alerts to Slack, automated prospect enrichment, LinkedIn tooling, WhatsApp inbound.
 
 ## Setup
 

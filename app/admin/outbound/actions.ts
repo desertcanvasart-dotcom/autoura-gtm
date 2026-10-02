@@ -17,6 +17,7 @@ import {
   cancelPendingDrafts,
   getLatestMessage,
   requeueFailedMessage,
+  markProspectReplied,
 } from '@/lib/outbound/db'
 import { parseProspectsCsv } from '@/lib/outbound/csv'
 import { draftTouch1 } from '@/lib/outbound/copywriter'
@@ -113,10 +114,10 @@ export async function retryFailedAction(formData: FormData) {
 export async function markRepliedAction(formData: FormData) {
   const prospectId = String(formData.get('prospect_id') || '')
   const campaignId = String(formData.get('campaign_id') || '')
-  const p = await getProspect(prospectId)
-  if (!p) return
-  await setSequenceStatus(p.id, 'replied') // stops any further touches
-  await handoffToConcierge(p) // creates a gtm-outbound lead in /admin
+  // Stops further touches and cancels pending drafts. Only hand off if this
+  // click made the change — auto-detection may already have handled the reply.
+  const p = await markProspectReplied(prospectId)
+  if (p) await handoffToConcierge(p) // creates a gtm-outbound lead in /admin
   if (campaignId) revalidatePath(`/admin/outbound/${campaignId}`)
 }
 
