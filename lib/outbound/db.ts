@@ -331,6 +331,23 @@ export async function claimDraftForSend(id: string): Promise<boolean> {
   return (data ?? []).length > 0
 }
 
+/**
+ * Put a failed send back in the approval queue as a draft (same content), so a
+ * person can approve it again. Returns false if it was no longer 'failed'.
+ */
+export async function requeueFailedMessage(message: MessageRow): Promise<boolean> {
+  const supabase = getSupabaseAdmin()
+  const { data } = await supabase
+    .from('outbound_messages')
+    .update({ status: 'draft', error: null, approved_at: null, sent_at: null })
+    .eq('id', message.id)
+    .eq('status', 'failed')
+    .select('id')
+  if ((data ?? []).length === 0) return false
+  await supabase.from('outbound_prospects').update({ status: 'drafted' }).eq('id', message.prospect_id)
+  return true
+}
+
 export async function getMessage(id: string): Promise<MessageRow | null> {
   const supabase = getSupabaseAdmin()
   const { data } = await supabase.from('outbound_messages').select('*').eq('id', id).maybeSingle()

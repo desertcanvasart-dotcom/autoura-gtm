@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getCampaign, listProspects, listMessagesByProspect, type ProspectRow, type MessageRow } from '@/lib/outbound/db'
-import { importCsvAction, draftAction, approveSendAction, suppressAction, markRepliedAction, stopSequenceAction } from '../actions'
+import { importCsvAction, draftAction, approveSendAction, suppressAction, markRepliedAction, stopSequenceAction, retryFailedAction } from '../actions'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -96,6 +96,7 @@ function SeqPill({ value }: { value: string }) {
 
 function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | null; maxTouches: number }) {
   const hasDraft = m && m.status === 'draft' && p.sequence_status === 'active'
+  const canRetry = m && m.status === 'failed' && m.error !== 'suppressed' && p.sequence_status === 'active' && p.status !== 'suppressed'
   const isSent = p.status === 'sent' || (m && (m.status === 'sent' || m.status === 'dry_run'))
   // Touch 1 can only be (re)drafted before anything has gone out.
   const canDraftTouch1 = p.current_touch === 0 && !isSent && p.status !== 'suppressed'
@@ -144,6 +145,14 @@ function ProspectCard({ p, m, maxTouches }: { p: ProspectRow; m: MessageRow | nu
             <input type="hidden" name="message_id" value={m!.id} />
             <button className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark">
               {DRY_RUN ? 'Approve (dry-run)' : 'Approve & send'}
+            </button>
+          </form>
+        )}
+        {canRetry && (
+          <form action={retryFailedAction}>
+            <input type="hidden" name="message_id" value={m!.id} />
+            <button className="rounded-lg border border-warm-300 px-3 py-1.5 text-sm text-warm-700 hover:bg-warm-50">
+              Retry touch {m!.touch_number}
             </button>
           </form>
         )}

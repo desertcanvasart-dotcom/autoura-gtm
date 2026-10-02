@@ -15,6 +15,8 @@ import {
   setSequenceStatus,
   claimDraftForSend,
   cancelPendingDrafts,
+  getLatestMessage,
+  requeueFailedMessage,
 } from '@/lib/outbound/db'
 import { parseProspectsCsv } from '@/lib/outbound/csv'
 import { draftTouch1 } from '@/lib/outbound/copywriter'
@@ -85,6 +87,20 @@ export async function approveSendAction(formData: FormData) {
     await markMessageSent(m.id, { status: outcome.status, resendId: outcome.resendId })
     // Advance the sequence: record this touch and schedule the next (or complete).
     await advanceSequenceAfterSend(p, c, m.touch_number)
+  }
+  revalidatePath(`/admin/outbound/${p.campaign_id}`)
+}
+
+export async function retryFailedAction(formData: FormData) {
+  const messageId = String(formData.get('message_id') || '')
+  const m = await getMessage(messageId)
+  if (!m || m.status !== 'failed') return
+  const p = await getProspect(m.prospect_id)
+  if (!p) return
+  // Only retry the prospect's latest message, and only while the sequence is live.
+  const latest = await getLatestMessage(p.id)
+  if (p.sequence_status === 'active' && p.status !== 'suppressed' && latest?.id === m.id) {
+    await requeueFailedMessage(m) // back to draft → needs approval again
   }
   revalidatePath(`/admin/outbound/${p.campaign_id}`)
 }
