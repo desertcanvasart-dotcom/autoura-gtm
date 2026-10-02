@@ -75,7 +75,12 @@ export async function approveSendAction(formData: FormData) {
   // Claim the draft atomically so a double-click or second tab can't send twice.
   if (!(await claimDraftForSend(m.id))) return
 
-  const outcome = await sendOutbound(m, p, c)
+  // Anything thrown after the claim (e.g. missing config) must land as 'failed'
+  // so it shows an error and can be retried, not sit stuck in 'approved'.
+  const outcome = await sendOutbound(m, p, c).catch((err: unknown) => ({
+    status: 'failed' as const,
+    error: (err as Error).message,
+  }))
   if (outcome.status === 'suppressed') {
     await setProspectStatus(p.id, 'suppressed')
     await setSequenceStatus(p.id, 'opted_out')
