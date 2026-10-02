@@ -51,7 +51,7 @@ function adminUrl(conversationId: string): string | null {
 /** Build the alert email. Pure — all prospect-supplied text is escaped for HTML. */
 export function buildEscalationEmail(input: EscalationAlertInput): EscalationEmail {
   const lead = input.lead ?? {}
-  const who = oneLine(lead.company_name || lead.contact_name || lead.contact_email || 'Unknown prospect').slice(0, 80)
+  const who = oneLine(lead.company_name || lead.contact_name || lead.contact_email || lead.contact_phone || 'Unknown prospect').slice(0, 80)
   const subject = `[Autoura] Escalated lead: ${who}`
 
   const fields: [string, string | number | null | undefined][] = [
@@ -60,6 +60,7 @@ export function buildEscalationEmail(input: EscalationAlertInput): EscalationEma
     ['Company', lead.company_name],
     ['Contact', lead.contact_name],
     ['Email', lead.contact_email],
+    ['Phone', lead.contact_phone],
     ['Role', lead.role_title],
     ['Destinations', lead.destinations],
     ['Business model', lead.business_model],

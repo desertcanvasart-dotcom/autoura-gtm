@@ -10,7 +10,18 @@ import { getProductTruth } from '@/lib/knowledge/loader'
 import { retrieveRelevant } from '@/lib/knowledge/retrieval'
 import { CONCIERGE_GREETING } from '@/lib/greeting'
 
-export function buildSystemPrompt(conversationText: string): string {
+const CHANNEL_NOTES: Record<'web' | 'whatsapp', string> = {
+  web: '',
+  whatsapp: `
+
+CHANNEL: WHATSAPP
+This conversation is on WhatsApp, not the website widget. Keep each reply
+short (a few sentences), plain text only: no markdown, no headings, no tables.
+Put links as the bare URL. The prospect messaged us first; never ask to move
+the conversation to another WhatsApp number.`,
+}
+
+export function buildSystemPrompt(conversationText: string, channel: 'web' | 'whatsapp' = 'web'): string {
   const t = getProductTruth()
   const retrieved = retrieveRelevant(conversationText)
 
@@ -136,5 +147,5 @@ ${caseStudies}
 TONE
 Warm, direct, operator-to-operator. Short messages. If you don't know something
 or it isn't in what you're allowed to claim, say "let me flag that for the team"
-— never guess.`
+— never guess.${CHANNEL_NOTES[channel]}`
 }

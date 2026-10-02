@@ -12,6 +12,15 @@ Standalone GTM service for **selling Autoura (the product) to travel agencies, t
 - **Admin view** — `/admin` lists conversations + the lead each generated, with full transcripts, for weekly claims-drift review.
 - **Dedicated GTM tables** — `gtm_conversations`, `gtm_messages`, `gtm_leads` in a **separate** Supabase project. `source` ∈ `{gtm-inbound, gtm-outbound}` lives on `gtm_leads`.
 
+## WhatsApp inbound
+
+Prospects can message Autoura's WhatsApp Business number and talk to the **same concierge** as the web widget: same knowledge base, guardrails, tools, lead record, escalation alerts and `/admin` transcript (marked *WhatsApp*). Webhook: `/api/whatsapp/webhook` ([`lib/whatsapp/`](lib/whatsapp/)).
+
+- **Meta Cloud API or Twilio**, chosen with `WHATSAPP_PROVIDER` (same env var names as autoura-saas). Unset means WhatsApp is off.
+- **Inbound only:** it replies to people who messaged first and never starts a WhatsApp conversation (the playbook's "never cold-contact on WhatsApp" rule).
+- Provider signatures are verified on every webhook; replies run after a fast `200` so slow turns never cause retries; duplicate deliveries are processed once.
+- One conversation per phone number (a fresh one after 30 days of silence); messages from one person are handled in order; a daily per-number cap (`WHATSAPP_MAX_MESSAGES_PER_DAY`, default 40) protects the Anthropic bill; media gets a polite "please type your question".
+
 ## What's in Phase 2 (Outbound Prospector)
 
 - **Prospect import + drafting** — `/admin/outbound`: create a campaign, paste a prospect CSV ([template](docs/outbound-prospects-template.csv)), and Claude drafts a personalized Touch 1 per prospect ([`lib/outbound/copywriter.ts`](lib/outbound/copywriter.ts)), guarded by the same product-truth claims.
@@ -23,13 +32,13 @@ Standalone GTM service for **selling Autoura (the product) to travel agencies, t
 
 - **LinkedIn (assisted)** — **Draft LinkedIn note** has Claude write a short connection-request note (same voice and claim rules, within LinkedIn's character limit, no links or prices). A person copies it, sends it on LinkedIn themselves, and clicks **Mark sent on LinkedIn** ([`lib/outbound/linkedin.ts`](lib/outbound/linkedin.ts)). Nothing is automated on LinkedIn: it has no API for this and its User Agreement forbids automating it. Add profile URLs with a `linkedin` CSV column.
 
-**Not built yet** (later phases): escalation alerts to Slack, WhatsApp inbound.
+**Not built yet** (later phases): escalation alerts to Slack.
 
 ## Setup
 
 1. `npm install`
 2. Create a **new/separate** Supabase project (not the autoura-saas one).
-3. Apply the migrations in order — [`001_gtm_tables.sql`](supabase/migrations/001_gtm_tables.sql), [`002_outbound_tables.sql`](supabase/migrations/002_outbound_tables.sql), [`003_outbound_sequencing.sql`](supabase/migrations/003_outbound_sequencing.sql), [`004_prospect_enrichment.sql`](supabase/migrations/004_prospect_enrichment.sql), [`005_linkedin_channel.sql`](supabase/migrations/005_linkedin_channel.sql) — in the Supabase SQL editor (or via the Supabase CLI). All are safe to re-run.
+3. Apply the migrations in order — [`001_gtm_tables.sql`](supabase/migrations/001_gtm_tables.sql), [`002_outbound_tables.sql`](supabase/migrations/002_outbound_tables.sql), [`003_outbound_sequencing.sql`](supabase/migrations/003_outbound_sequencing.sql), [`004_prospect_enrichment.sql`](supabase/migrations/004_prospect_enrichment.sql), [`005_linkedin_channel.sql`](supabase/migrations/005_linkedin_channel.sql), [`006_whatsapp_inbound.sql`](supabase/migrations/006_whatsapp_inbound.sql) — in the Supabase SQL editor (or via the Supabase CLI). All are safe to re-run.
 4. `cp .env.local.example .env.local` and fill in:
    - `ANTHROPIC_API_KEY`
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
@@ -86,6 +95,8 @@ lib/ai/anthropic-client.ts     → Anthropic client + retry (mirrors main app)
 lib/ai/system-prompt.ts        → spec §4 prompt, composed from the truth file
 lib/ai/concierge-agent.ts      → tool-calling loop (update_lead / offer_demo / escalate_lead)
 lib/qualification.ts           → deterministic escalation backstop
+lib/whatsapp/*                 → WhatsApp providers (Meta/Twilio), formatting, inbound handler
+app/api/whatsapp/webhook/      → inbound WhatsApp webhook
 lib/notifications/*            → escalation alert email (Resend)
 lib/supabase/*                 → service-role client + persistence + admin reads
 app/api/chat/route.ts          → POST one turn

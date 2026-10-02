@@ -149,15 +149,17 @@ export async function runAgentTurn(params: {
   conversationId: string
   history: AgentHistoryMessage[]
   userMessage: string
+  /** Where the prospect is talking to us; shapes reply formatting. */
+  channel?: 'web' | 'whatsapp'
 }): Promise<AgentTurnResult> {
-  const { conversationId, history, userMessage } = params
+  const { conversationId, history, userMessage, channel = 'web' } = params
 
   const conversationText = [...history.map((m) => m.content), userMessage].join('\n')
   // For escalation heuristics, only consider USER-authored text — never the
   // assistant's own messages, which recite the pricing tiers ("Enterprise",
   // "custom quotes") and would otherwise false-trigger an escalation.
   const userText = [...history.filter((m) => m.role === 'user').map((m) => m.content), userMessage].join('\n')
-  const systemPrompt = buildSystemPrompt(conversationText)
+  const systemPrompt = buildSystemPrompt(conversationText, channel)
 
   // Anthropic requires the first message to be from the user. The persisted
   // history starts with the assistant greeting, so drop any leading assistant
