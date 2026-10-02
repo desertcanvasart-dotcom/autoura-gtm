@@ -1,12 +1,13 @@
 // ============================================================================
 // /api/cron/outbound-followups  — draft due Touch 2/3 into the approval queue
 // ============================================================================
-// Protected by CRON_SECRET (Bearer header or ?secret=). Point any daily
+// Protected by CRON_SECRET (Authorization: Bearer header). Point any daily
 // scheduler at it (Railway cron, GitHub Action, cron-job.org). It NEVER sends —
 // it drafts due follow-ups for a human to approve. Safe to run frequently.
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { draftDueFollowups } from '@/lib/outbound/sequencer'
 
 export const runtime = 'nodejs'
@@ -16,9 +17,10 @@ function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET
   if (!secret) return false
   const header = req.headers.get('authorization') || ''
-  if (header === `Bearer ${secret}`) return true
-  const url = new URL(req.url)
-  return url.searchParams.get('secret') === secret
+  // Hash both sides so the comparison is constant-time regardless of length.
+  const a = createHash('sha256').update(header).digest()
+  const b = createHash('sha256').update(`Bearer ${secret}`).digest()
+  return timingSafeEqual(a, b)
 }
 
 async function run(req: NextRequest): Promise<NextResponse> {

@@ -40,7 +40,8 @@ export async function draftDueFollowups(limit = 25): Promise<SequencerResult> {
       const subject = touch1Subject.toLowerCase().startsWith('re:') ? touch1Subject : `Re: ${touch1Subject}`
       await upsertDraft(prospect, subject, draft.body, nextTouch)
       result.drafted++
-    } catch {
+    } catch (err) {
+      console.error(`[sequencer] failed to draft follow-up for prospect ${prospect.id}`, err)
       result.errors++
     }
   }
