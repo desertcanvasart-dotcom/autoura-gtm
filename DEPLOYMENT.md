@@ -6,8 +6,9 @@ Hand this to whoever is deploying. It takes the **autoura-growth** GTM concierge
 1. A **Supabase project** (dedicated to GTM — separate from the main app's).
 2. The **autoura-growth** Next.js app, deployed on **Railway** (this repo).
 3. A one-line change to the already-live **autoura-saas** app so the chat bubble appears on **getautoura.net**.
+4. *(Optional, Phase 2)* The **Outbound Prospector** — human-approved cold email via Resend, with automatic follow-ups. See **Part F**; skip it if you're only launching the chat widget.
 
-**Time:** ~30–45 min. **You'll need:** access to Railway, the GTM Supabase project, an Anthropic API key, and the autoura-saas Railway service.
+**Time:** ~30–45 min for Parts A–E, plus ~30 min (and DNS propagation) for Part F. **You'll need:** access to Railway, the GTM Supabase project, an Anthropic API key, and the autoura-saas Railway service. For Part F also: a Resend account, DNS access for getautoura.net, and admin access to this GitHub repo.
 
 ---
 
@@ -98,6 +99,105 @@ The marketing site is served by the **autoura-saas** repo, which is already live
 
 ---
 
+## Part F — Phase 2: Outbound Prospector (optional)
+
+Outbound lets you import a list of operators, have Claude draft a personalized first email for each, and send it through Resend **only after a person clicks Approve**. Follow-ups (Touch 2 and 3) are drafted automatically when due and land in the same approval queue. Nothing is ever sent without a click.
+
+Do Parts A–E first. Then work through F1–F7 in order. **Leave `OUTBOUND_DRY_RUN=true` until F6 passes.**
+
+### F1 — Apply the outbound migrations
+
+In the GTM Supabase project's **SQL Editor**, run these two files in order. Both are safe to re-run.
+
+1. [`supabase/migrations/002_outbound_tables.sql`](supabase/migrations/002_outbound_tables.sql) — creates `outbound_campaigns`, `outbound_prospects`, `outbound_messages`, `outbound_suppression`.
+2. [`supabase/migrations/003_outbound_sequencing.sql`](supabase/migrations/003_outbound_sequencing.sql) — adds follow-up timing and sequence state.
+
+Verify: **Table Editor** lists the four `outbound_` tables, and `outbound_prospects` has `sequence_status`, `current_touch` and `next_touch_due_at` columns.
+
+### F2 — Set up a sending subdomain in Resend
+
+Send cold email from a **separate subdomain** (e.g. `outreach.getautoura.net`), never from `getautoura.net` itself. Then spam complaints can't hurt deliverability for your normal mail.
+
+1. In Resend → **Domains → Add domain** → `outreach.getautoura.net`.
+2. Add the DNS records Resend shows you (SPF, DKIM, and the MX for bounces) at your DNS provider. If `getautoura.net` has no DMARC record yet, add one. A monitoring-only `v=DMARC1; p=none; rua=mailto:<you>@getautoura.net` is fine to start.
+3. Wait until Resend shows the domain as **Verified**.
+4. Resend → **API Keys → Create** (sending access is enough) → copy it for F3.
+
+A sending subdomain doesn't receive mail. Replies go to the inbox you set in `OUTBOUND_REPLY_TO`, so it must be a **real, monitored** mailbox.
+
+### F3 — Add the outbound variables in Railway
+
+On the **autoura-growth** service → **Variables**, add the following. Railway redeploys when variables change. None of these are build-time, so a redeploy is enough.
+
+| Variable | Value / where to get it |
+|---|---|
+| `RESEND_API_KEY` | F2 step 4 (secret) |
+| `OUTBOUND_FROM_EMAIL` | Sender on the verified subdomain, e.g. `Islam at Autoura <islam@outreach.getautoura.net>` |
+| `OUTBOUND_REPLY_TO` | A real inbox you read, e.g. `islam@getautoura.net` |
+| `OUTBOUND_POSTAL_ADDRESS` | Your physical mailing address, shown in every email footer. Cold email law requires it. |
+| `OUTBOUND_PUBLIC_BASE_URL` | This app's public URL, no trailing slash, e.g. `https://autoura-growth-production.up.railway.app`. Unsubscribe links are built from it. |
+| `OUTBOUND_UNSUB_SECRET` | Generate (below). Signs unsubscribe links. **Don't change it later**, or links in emails already sent stop working. |
+| `CRON_SECRET` | Generate (below). Protects the follow-up endpoint. |
+| `RESEND_WEBHOOK_SECRET` | Leave empty for now; filled in F4. |
+| `OUTBOUND_DRY_RUN` | `true` for now. The whole flow runs, but no email is actually sent. |
+
+Generate each secret separately:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+A campaign can override the sender. If you fill in "from email" when you create the campaign, it's used instead of `OUTBOUND_FROM_EMAIL`.
+
+### F4 — Connect the Resend webhook (bounces & complaints)
+
+This automatically suppresses addresses that hard-bounce or mark you as spam, and stops their sequences.
+
+1. Resend → **Webhooks → Add endpoint** → URL `https://<your-railway-domain>/api/outbound/resend-webhook`.
+2. Events: **`email.bounced`** and **`email.complained`**.
+3. Copy the endpoint's signing secret (`whsec_...`) into `RESEND_WEBHOOK_SECRET` on Railway, and let it redeploy.
+4. Check delivery in the endpoint's log in Resend (use a test event if Resend offers one; otherwise check after the first real bounce). It should show `200`. A `401` means the secret is wrong, or the event is more than 5 minutes old — older events are rejected to block replays. A `503` means `RESEND_WEBHOOK_SECRET` isn't set yet.
+
+### F5 — Schedule the follow-up drafter
+
+Something must call `/api/cron/outbound-followups` regularly. It only **drafts** due follow-ups into the approval queue and never sends. Pick **one** option:
+
+**Option 1 — GitHub Action (already in the repo).** [`.github/workflows/outbound-followups.yml`](.github/workflows/outbound-followups.yml) runs daily at 08:00 UTC.
+1. GitHub → this repo → **Settings → Secrets and variables → Actions → New repository secret** → name `CRON_SECRET`, value identical to Railway's `CRON_SECRET`.
+2. The workflow calls `https://autoura-growth-production.up.railway.app/...`. If your Railway domain is different, edit the URL in the workflow file.
+3. **Actions → Outbound follow-ups → Run workflow** once by hand. The log should end with `{"ok":true,"drafted":0,...}`.
+
+**Option 2 — In-app timer.** On Railway set `OUTBOUND_INTERNAL_CRON=true` and optionally `OUTBOUND_INTERNAL_CRON_HOURS` (default `6`). The server drafts due follow-ups on that interval; logs show `[internal-cron] enabled`. Use this only if the app runs as a **single** replica. With more replicas, each one would run the timer.
+
+**Option 3 — Any external scheduler** (Railway cron, cron-job.org): `POST` the URL with header `Authorization: Bearer <CRON_SECRET>`. Passing the secret as `?secret=` in the URL is **not** accepted.
+
+### F6 — Dry-run verification (with `OUTBOUND_DRY_RUN=true`)
+
+Use addresses you control (e.g. `you+test1@gmail.com`). Start from [`docs/outbound-prospects-template.csv`](docs/outbound-prospects-template.csv): delete the example rows and add yours.
+
+- [ ] `https://<railway-domain>/admin/outbound` loads with no "Couldn't load" error. If it errors, F1 wasn't applied.
+- [ ] Create a campaign → paste the CSV → **Import**. Prospects appear.
+- [ ] **Draft touch 1** produces a personalized subject and body that quote only published prices and never call QuickBooks/Xero "integrated".
+- [ ] **Approve (dry-run)** marks it `dry_run`, and the prospect shows `touch 1/3` with a "next touch due" date.
+- [ ] Force a follow-up: in Supabase set that prospect's `next_touch_due_at` to a past time, then run the scheduler (F5). A **Touch 2** draft appears with a `Re:` subject.
+- [ ] On the prospect with the pending Touch 2 draft, click **Replied → hand to concierge**. The sequence shows `replied`, the Approve button is gone, and a `gtm-outbound` lead appears in `/admin`.
+- [ ] On a prospect you haven't sent to, click **Suppress**. It shows `suppressed`, and its sequence shows `opted_out`.
+
+### F7 — Go live
+
+1. Set `OUTBOUND_DRY_RUN=false` on Railway (it redeploys).
+2. The approve button now reads **Approve & send**. Send **one** real email to an address you own and check:
+   - it arrives in the inbox (not spam);
+   - the footer shows your postal address;
+   - **Unsubscribe** works and shows a confirmation. After that, the address is permanently suppressed.
+   - replying lands in `OUTBOUND_REPLY_TO`.
+3. Start real campaigns small, a few dozen sends per day, and grow gradually while the new subdomain builds a sending reputation.
+
+**Day-to-day:**
+- Check `OUTBOUND_REPLY_TO` daily. When a prospect replies, click **Replied → hand to concierge** on their card, which stops their sequence. Replies are not detected automatically yet.
+- If a send fails, the card shows the error and a **Retry touch N** button. If the error looks like a network timeout, check Resend's **Emails** log first, because the email may already have gone out.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause & fix |
@@ -109,6 +209,16 @@ The marketing site is served by the **autoura-saas** repo, which is already live
 | No bubble on getautoura.net at all | `NEXT_PUBLIC_GROWTH_WIDGET_URL` not set on **autoura-saas**, or autoura-saas wasn't redeployed after setting it. See Part C. |
 | `/admin` returns 401 | Wrong password. Use the exact `ADMIN_ACCESS_TOKEN` value; leave username blank or type anything. |
 | `/admin` returns 503 | `ADMIN_ACCESS_TOKEN` isn't set on the growth service. Add it (Part B2) and redeploy. |
+| `/admin/outbound` says "Couldn't load … migration 002" | Migrations 002/003 weren't applied to this Supabase project. See F1. |
+| Draft button does nothing / prospect turns `failed` | Drafting calls Claude. Check Railway logs for the Anthropic error, same causes as the chat 404 above. |
+| Approve shows `error: RESEND_API_KEY not configured` | `OUTBOUND_DRY_RUN=false` but no `RESEND_API_KEY`. Set it (F3), or go back to dry-run. |
+| Approve shows `Resend 403` (or another `Resend 4xx`) mentioning the domain | `OUTBOUND_FROM_EMAIL` isn't on a domain Resend has verified. Finish F2 or fix the address. |
+| Approve shows `error: OUTBOUND_UNSUB_SECRET is not configured` | Set it (F3), then click **Retry**. Every email needs a signed unsubscribe link. |
+| Unsubscribe link points to the wrong host or `/api/unsubscribe` with no domain | `OUTBOUND_PUBLIC_BASE_URL` is missing or wrong (F3). |
+| GitHub Action fails with `401` | The repo secret `CRON_SECRET` doesn't match Railway's, or isn't set (F5). |
+| GitHub Action fails to connect / `404` | The URL in `outbound-followups.yml` doesn't match your Railway domain (F5). |
+| Follow-ups never get drafted | No scheduler is running (F5), or the prospect's sequence isn't `active` (replied/stopped/opted out). Railway logs show `[sequencer] failed …` for drafting errors. |
+| Resend webhook deliveries return `401` | `RESEND_WEBHOOK_SECRET` doesn't match the endpoint's signing secret, or the event is older than 5 minutes (e.g. a delayed retry). |
 
 ---
 
@@ -143,5 +253,5 @@ Commit and deploy autoura-saas, then do Part C.
 ## Security notes
 
 - `.env.local` is gitignored and is **not** in this repo — real keys live only in Railway's Variables. Never commit secrets.
-- `SUPABASE_SERVICE_ROLE_KEY` and `ANTHROPIC_API_KEY` are server-only secrets. If either was ever shared in plaintext (chat, email, screenshot), rotate it.
-- The `gtm_` tables have RLS enabled with no public policies, so the anon key can't read/write them — only the server (service-role) can.
+- `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `CRON_SECRET`, `RESEND_WEBHOOK_SECRET` and `OUTBOUND_UNSUB_SECRET` are server-only secrets. If any was ever shared in plaintext (chat, email, screenshot), rotate it.
+- The `gtm_` and `outbound_` tables have RLS enabled with no public policies, so the anon key can't read/write them — only the server (service-role) can.
