@@ -3,6 +3,7 @@
 // ============================================================================
 import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { normalizeEmail, suppressedAmong } from './suppression'
+import { normalizeLinkedInUrl } from './linkedin'
 
 export type ProspectStatus =
   | 'new' | 'drafted' | 'approved' | 'sent' | 'replied' | 'suppressed' | 'skipped' | 'failed'
@@ -32,6 +33,7 @@ export interface ProspectRow {
   destination: string | null
   signal: string | null
   website: string | null
+  linkedin_url: string | null
   enrichment_status: EnrichmentStatus | null
   /** EnrichmentRecord from lib/outbound/enrichment.ts (JSONB). */
   enrichment: Record<string, unknown> | null
@@ -49,7 +51,7 @@ export interface MessageRow {
   prospect_id: string
   campaign_id: string
   touch_number: number
-  channel: string
+  channel: 'email' | 'linkedin'
   subject: string | null
   body: string | null
   status: 'draft' | 'approved' | 'sent' | 'failed' | 'canceled' | 'dry_run'
@@ -100,6 +102,7 @@ export interface ProspectInput {
   destination?: string
   signal?: string
   website?: string
+  linkedin_url?: string
 }
 
 export interface ImportResult {
@@ -136,6 +139,7 @@ export async function importProspects(campaignId: string, rows: ProspectInput[])
       destination: r.destination ?? null,
       signal: r.signal ?? null,
       website: r.website ?? null,
+      linkedin_url: normalizeLinkedInUrl(r.linkedin_url),
     })
     if (error) {
       // Unique-index violation = duplicate within campaign.
@@ -212,6 +216,7 @@ export async function getLatestMessage(prospectId: string): Promise<MessageRow |
     .from('outbound_messages')
     .select('*')
     .eq('prospect_id', prospectId)
+    .eq('channel', 'email')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -230,6 +235,7 @@ export async function upsertDraft(
     .from('outbound_messages')
     .delete()
     .eq('prospect_id', prospect.id)
+    .eq('channel', 'email')
     .eq('touch_number', touchNumber)
     .in('status', ['draft', 'canceled'])
 
@@ -254,6 +260,67 @@ export async function upsertDraft(
     .update({ status: 'drafted', next_touch_due_at: null })
     .eq('id', prospect.id)
   return data as MessageRow
+}
+
+// ---------------- LinkedIn (assisted) ----------------
+
+/** Replace any unsent LinkedIn draft for this prospect with a new one. */
+export async function upsertLinkedInDraft(prospect: ProspectRow, note: string): Promise<MessageRow> {
+  const supabase = getSupabaseAdmin()
+  await supabase
+    .from('outbound_messages')
+    .delete()
+    .eq('prospect_id', prospect.id)
+    .eq('channel', 'linkedin')
+    .in('status', ['draft', 'canceled', 'failed'])
+  const { data, error } = await supabase
+    .from('outbound_messages')
+    .insert({
+      prospect_id: prospect.id,
+      campaign_id: prospect.campaign_id,
+      touch_number: 1,
+      channel: 'linkedin',
+      subject: null,
+      body: note,
+      status: 'draft',
+    })
+    .select('*')
+    .single()
+  if (error || !data) throw new Error(`upsertLinkedInDraft failed: ${error?.message}`)
+  return data as MessageRow
+}
+
+/** Record a failed LinkedIn draft so the card can show why (replaces older failures). */
+export async function saveLinkedInFailure(prospect: ProspectRow, error: string): Promise<void> {
+  const supabase = getSupabaseAdmin()
+  await supabase
+    .from('outbound_messages')
+    .delete()
+    .eq('prospect_id', prospect.id)
+    .eq('channel', 'linkedin')
+    .in('status', ['draft', 'canceled', 'failed'])
+  await supabase.from('outbound_messages').insert({
+    prospect_id: prospect.id,
+    campaign_id: prospect.campaign_id,
+    touch_number: 1,
+    channel: 'linkedin',
+    status: 'failed',
+    error: error.slice(0, 500),
+  })
+}
+
+/** A person sent the note on LinkedIn: draft -> sent (only from draft). */
+export async function markLinkedInSent(messageId: string): Promise<boolean> {
+  const supabase = getSupabaseAdmin()
+  const now = new Date().toISOString()
+  const { data } = await supabase
+    .from('outbound_messages')
+    .update({ status: 'sent', approved_at: now, sent_at: now })
+    .eq('id', messageId)
+    .eq('channel', 'linkedin')
+    .eq('status', 'draft')
+    .select('id')
+  return (data ?? []).length > 0
 }
 
 // ---------------- Sequencing (Slice B) ----------------
@@ -315,6 +382,7 @@ export async function getSentTouches(prospectId: string): Promise<MessageRow[]> 
     .from('outbound_messages')
     .select('*')
     .eq('prospect_id', prospectId)
+    .eq('channel', 'email')
     .in('status', ['sent', 'dry_run'])
     .order('touch_number', { ascending: true })
   return (data ?? []) as MessageRow[]
@@ -410,6 +478,7 @@ export async function claimDraftForSend(id: string): Promise<boolean> {
     .from('outbound_messages')
     .update({ status: 'approved', approved_at: new Date().toISOString() })
     .eq('id', id)
+    .eq('channel', 'email') // the email sender never claims a LinkedIn draft
     .eq('status', 'draft')
     .select('id')
   return (data ?? []).length > 0
@@ -455,14 +524,18 @@ export async function markMessageSent(
     .eq('id', id)
 }
 
-/** Messages by status across all campaigns, most recent first (for the queue view). */
-export async function listMessagesByProspect(prospectIds: string[]): Promise<Map<string, MessageRow>> {
+/** Latest message per prospect on one channel (for the campaign view). */
+export async function listMessagesByProspect(
+  prospectIds: string[],
+  channel: MessageRow['channel'] = 'email'
+): Promise<Map<string, MessageRow>> {
   if (prospectIds.length === 0) return new Map()
   const supabase = getSupabaseAdmin()
   const { data } = await supabase
     .from('outbound_messages')
     .select('*')
     .in('prospect_id', prospectIds)
+    .eq('channel', channel)
     .order('created_at', { ascending: false })
   const map = new Map<string, MessageRow>()
   for (const m of (data ?? []) as MessageRow[]) {

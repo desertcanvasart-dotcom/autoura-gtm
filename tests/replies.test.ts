@@ -14,7 +14,7 @@ function prospect(over: Partial<ProspectRow>): ProspectRow {
   return {
     id: 'p1', campaign_id: 'c1', company_name: 'Nile Star', contact_name: 'Mona',
     contact_email: 'mona@nilestar.example', role_title: null, destination: null, signal: null,
-    website: null, enrichment_status: null, enrichment: null, enriched_at: null,
+    website: null, linkedin_url: null, enrichment_status: null, enrichment: null, enriched_at: null,
     status: 'replied', sequence_status: 'replied', current_touch: 1, next_touch_due_at: null,
     created_at: '2026-09-01T00:00:00Z', updated_at: '2026-10-02T00:00:00Z', ...over,
   }
