@@ -12,18 +12,27 @@ Standalone GTM service for **selling Autoura (the product) to travel agencies, t
 - **Admin view** — `/admin` lists conversations + the lead each generated, with full transcripts, for weekly claims-drift review.
 - **Dedicated GTM tables** — `gtm_conversations`, `gtm_messages`, `gtm_leads` in a **separate** Supabase project. `source` ∈ `{gtm-inbound, gtm-outbound}` lives on `gtm_leads`.
 
-**Not built yet** (later phases): outbound sequencing, email sending, LinkedIn tooling, enrichment, WhatsApp inbound.
+## What's in Phase 2 (Outbound Prospector)
+
+- **Prospect import + drafting** — `/admin/outbound`: create a campaign, paste a prospect CSV ([template](docs/outbound-prospects-template.csv)), and Claude drafts a personalized Touch 1 per prospect ([`lib/outbound/copywriter.ts`](lib/outbound/copywriter.ts)), guarded by the same product-truth claims.
+- **Human-approved sending** — every email waits for a person to click Approve; it then sends via Resend ([`lib/outbound/sender.ts`](lib/outbound/sender.ts)) with a signed unsubscribe link, `List-Unsubscribe` headers, and your postal address. `OUTBOUND_DRY_RUN=true` runs the whole flow without sending.
+- **Suppression list** — opt-outs, bounces, complaints and manual suppressions are checked before every send.
+- **Multi-touch sequencing** — after Touch 1, Touch 2 (proof) and Touch 3 (permission-to-close) are auto-drafted when due into the same approval queue. A daily GitHub Action ([`.github/workflows/outbound-followups.yml`](.github/workflows/outbound-followups.yml)) calls `/api/cron/outbound-followups` (Bearer `CRON_SECRET`); `OUTBOUND_INTERNAL_CRON=true` is an in-app alternative.
+- **Stop conditions** — "Replied → hand to concierge" (creates a `gtm-outbound` lead in `/admin`), manual stop, opt-out, and bounce/complaint via the signed Resend webhook at `/api/outbound/resend-webhook`. Stopping a sequence cancels any pending draft; failed sends can be retried (back to the approval queue).
+
+**Not built yet** (later phases): automatic reply detection (replies are marked by hand today), escalation alerts by email/Slack, automated prospect enrichment, LinkedIn tooling, WhatsApp inbound.
 
 ## Setup
 
 1. `npm install`
 2. Create a **new/separate** Supabase project (not the autoura-saas one).
-3. Apply the migration: run [`supabase/migrations/001_gtm_tables.sql`](supabase/migrations/001_gtm_tables.sql) in the Supabase SQL editor (or via the Supabase CLI).
+3. Apply the migrations in order — [`001_gtm_tables.sql`](supabase/migrations/001_gtm_tables.sql), [`002_outbound_tables.sql`](supabase/migrations/002_outbound_tables.sql), [`003_outbound_sequencing.sql`](supabase/migrations/003_outbound_sequencing.sql) — in the Supabase SQL editor (or via the Supabase CLI). All are safe to re-run.
 4. `cp .env.local.example .env.local` and fill in:
    - `ANTHROPIC_API_KEY`
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
    - `GTM_ALLOWED_FRAME_ANCESTORS` — your marketing origin(s), space-separated (e.g. `https://autoura.com https://www.autoura.com`)
    - `ADMIN_ACCESS_TOKEN` — a long random string; you'll be prompted for it (Basic auth) at `/admin`
+   - Outbound (only if you use Phase 2): `RESEND_API_KEY`, `OUTBOUND_FROM_EMAIL`, `OUTBOUND_REPLY_TO`, `OUTBOUND_POSTAL_ADDRESS`, `OUTBOUND_PUBLIC_BASE_URL`, `OUTBOUND_UNSUB_SECRET`, `OUTBOUND_DRY_RUN`, `CRON_SECRET`, `RESEND_WEBHOOK_SECRET` — see [`.env.local.example`](.env.local.example) for what each does
 5. `npm run dev` → http://localhost:3100
 
 ## Deploying to Railway
@@ -78,5 +87,14 @@ lib/supabase/*                 → service-role client + persistence + admin rea
 app/api/chat/route.ts          → POST one turn
 app/widget/                    → iframe-embeddable chat page
 app/admin/                     → transcripts + leads review
+knowledge/outbound-playbook.json → outbound touch angles + copy rules
+lib/ai/outbound-prompt.ts      → copywriter prompts (Touch 1 / follow-ups)
+lib/outbound/*                 → CSV import, drafting, suppression, Resend sender,
+                                 sequencer, Svix webhook verification, handoff
+app/admin/outbound/            → campaigns, prospects, approval queue
+app/api/cron/outbound-followups/ → draft due follow-ups (Bearer CRON_SECRET)
+app/api/outbound/resend-webhook/ → bounce/complaint auto-suppression
+app/api/unsubscribe/           → signed one-click unsubscribe
 supabase/migrations/001_*.sql  → gtm_ tables
+supabase/migrations/002–003    → outbound tables + sequencing
 ```

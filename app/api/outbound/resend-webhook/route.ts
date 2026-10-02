@@ -9,29 +9,12 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { verifySvix, isFreshSvixTimestamp } from '@/lib/outbound/svix'
 import { addSuppression } from '@/lib/outbound/suppression'
 import { stopSequencesByEmail } from '@/lib/outbound/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-// Verify a Svix signature (the scheme Resend uses).
-function verifySvix(secret: string, id: string, timestamp: string, body: string, sigHeader: string): boolean {
-  try {
-    const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64')
-    const expected = createHmac('sha256', key).update(`${id}.${timestamp}.${body}`).digest('base64')
-    const expBuf = Buffer.from(expected)
-    // Header is space-separated "v1,<sig>" entries.
-    return sigHeader.split(' ').some((part) => {
-      const sig = part.includes(',') ? part.split(',')[1] : part
-      const sigBuf = Buffer.from(sig)
-      return sigBuf.length === expBuf.length && timingSafeEqual(sigBuf, expBuf)
-    })
-  } catch {
-    return false
-  }
-}
 
 export async function POST(req: NextRequest) {
   const secret = process.env.RESEND_WEBHOOK_SECRET
@@ -41,7 +24,8 @@ export async function POST(req: NextRequest) {
   const id = req.headers.get('svix-id') || ''
   const ts = req.headers.get('svix-timestamp') || ''
   const sig = req.headers.get('svix-signature') || ''
-  if (!verifySvix(secret, id, ts, body, sig)) {
+  // Reject stale/future timestamps so a captured signed event can't be replayed.
+  if (!isFreshSvixTimestamp(ts) || !verifySvix(secret, id, ts, body, sig)) {
     return NextResponse.json({ error: 'bad signature' }, { status: 401 })
   }
 
